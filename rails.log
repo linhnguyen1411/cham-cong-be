@@ -1,0 +1,105 @@
+=> Booting Puma
+=> Rails 7.1.6 application starting in development 
+=> Run `bin/rails server --help` for more startup options
+Puma starting in single mode...
+* Puma version: 7.1.0 ("Neon Witch")
+* Ruby version: ruby 3.2.2 (2023-03-30 revision e51014f9c0) [arm64-darwin24]
+*  Min threads: 5
+*  Max threads: 5
+*  Environment: development
+*          PID: 923
+* Listening on http://127.0.0.1:3000
+* Listening on http://[::1]:3000
+Use Ctrl-C to stop
+Started GET "/" for ::1 at 2025-12-10 11:26:05 +0700
+  [1m[36mActiveRecord::SchemaMigration Load (1.6ms)[0m  [1m[34mSELECT "schema_migrations"."version" FROM "schema_migrations" ORDER BY "schema_migrations"."version" ASC[0m
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.3ms | Allocations: 377)
+Completed 200 OK in 7ms (Views: 2.4ms | ActiveRecord: 0.0ms | Allocations: 4185)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:06 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.2ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 1.0ms | ActiveRecord: 0.0ms | Allocations: 185)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:07 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 3ms (Views: 2.3ms | ActiveRecord: 0.0ms | Allocations: 183)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:08 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.8ms | ActiveRecord: 0.0ms | Allocations: 183)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:09 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.6ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:10 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.8ms | ActiveRecord: 0.0ms | Allocations: 183)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:11 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.8ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:12 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.8ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:13 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.2ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 1.0ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:15 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.7ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:16 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 2ms (Views: 1.1ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:17 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.8ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
+Started GET "/" for ::1 at 2025-12-10 11:26:18 +0700
+Processing by Rails::WelcomeController#index as HTML
+  Rendering /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb
+  Rendered /Users/linhnguyen21/.rbenv/versions/3.2.2/lib/ruby/gems/3.2.0/gems/railties-7.1.6/lib/rails/templates/rails/welcome/index.html.erb (Duration: 0.1ms | Allocations: 13)
+Completed 200 OK in 1ms (Views: 0.4ms | ActiveRecord: 0.0ms | Allocations: 179)
+
+
