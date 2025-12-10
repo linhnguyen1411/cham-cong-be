@@ -71,7 +71,6 @@ module Api
         params_to_update[:end_time] = Time.current if @session.end_time.nil?
         params_to_update[:duration_minutes] = ((params_to_update[:end_time] - @session.start_time) / 60).to_i
         params_to_update.merge!(session_params.slice(:work_summary, :challenges, :suggestions, :notes).compact)
-        binding.pry
         if @session.update(params_to_update)
           render json: @session
         else
