@@ -24,8 +24,13 @@ class User < ApplicationRecord
   
   def avatar_url
     if avatar.attached?
-      # Use rails_blob_url which handles the redirect correctly
-      Rails.application.routes.url_helpers.rails_blob_url(avatar, host: 'chamcong.minhtranholdings.vn', protocol: 'https')
+      # Use proxy URL which doesn't require signed verification
+      Rails.application.routes.url_helpers.rails_blob_url(
+        avatar, 
+        host: 'chamcong.minhtranholdings.vn', 
+        protocol: 'https',
+        disposition: 'inline'
+      ).gsub('/redirect/', '/proxy/')
     else
       read_attribute(:avatar_url) # fallback to DB column
     end
