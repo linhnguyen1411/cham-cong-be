@@ -6,12 +6,19 @@ module Api
       
       # GET /api/v1/work_shifts
       def index
-        @work_shifts = WorkShift.all
-        render json: @work_shifts
+        @work_shifts = if params[:department_id].present?
+          WorkShift.where(department_id: params[:department_id])
+        else
+          WorkShift.all
+        end
+        
+        render json: @work_shifts.map { |s|
+          s.as_json.merge(department_name: s.department&.name)
+        }
       end
       
       def show
-        render json: @work_shift
+        render json: @work_shift.as_json.merge(department_name: @work_shift.department&.name)
       end
       
       # POST /api/v1/work_shifts
@@ -19,7 +26,7 @@ module Api
         @work_shift = WorkShift.new(work_shift_params)
         
         if @work_shift.save
-          render json: @work_shift, status: :created
+          render json: @work_shift.as_json.merge(department_name: @work_shift.department&.name), status: :created
         else
           render json: { errors: @work_shift.errors.full_messages }, status: :unprocessable_entity
         end
@@ -28,7 +35,7 @@ module Api
       # PATCH/PUT /api/v1/work_shifts/:id
       def update
         if @work_shift.update(work_shift_params)
-          render json: @work_shift
+          render json: @work_shift.as_json.merge(department_name: @work_shift.department&.name)
         else
           render json: { errors: @work_shift.errors.full_messages }, status: :unprocessable_entity
         end
@@ -47,7 +54,7 @@ module Api
       end
       
       def work_shift_params
-        params.require(:work_shift).permit(:name, :start_time, :end_time, :late_threshold)
+        params.require(:work_shift).permit(:name, :start_time, :end_time, :late_threshold, :department_id)
       end
     end
   end
