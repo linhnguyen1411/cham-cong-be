@@ -18,6 +18,7 @@ module Api
           {
             id: s.id,
             user_id: s.user_id,
+            user_name: s.user&.full_name || 'Unknown',
             start_time: s.start_time,
             end_time: s.end_time,
             duration_minutes: s.duration_minutes,
