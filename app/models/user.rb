@@ -24,13 +24,8 @@ class User < ApplicationRecord
   
   def avatar_url
     if avatar.attached?
-      # Use proxy URL which doesn't require signed verification
-      Rails.application.routes.url_helpers.rails_blob_url(
-        avatar, 
-        host: 'chamcong.minhtranholdings.vn', 
-        protocol: 'https',
-        disposition: 'inline'
-      ).gsub('/redirect/', '/proxy/')
+      # Use custom endpoint that doesn't require signed verification
+      "https://chamcong.minhtranholdings.vn/api/v1/users/#{id}/avatar"
     else
       read_attribute(:avatar_url) # fallback to DB column
     end

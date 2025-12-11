@@ -20,6 +20,7 @@ Rails.application.routes.draw do
         member do
           patch :update_password
           post :update_avatar
+          get :avatar
         end
       end
       resources :work_shifts, only: [:index, :create, :update, :destroy]
