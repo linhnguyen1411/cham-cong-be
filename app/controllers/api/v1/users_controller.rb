@@ -80,6 +80,20 @@ class Api::V1::UsersController < ApplicationController
     end
   end
 
+  # GET /api/v1/users/:id/avatar - Serve avatar directly (public action, no auth required)
+  def avatar
+    user = User.find_by(id: params[:id])
+    
+    if user&.avatar&.attached?
+      send_data user.avatar.download, 
+                type: user.avatar.content_type, 
+                disposition: 'inline',
+                filename: user.avatar.filename.to_s
+    else
+      head :not_found
+    end
+  end
+
   private
 
   def set_user
@@ -92,20 +106,6 @@ class Api::V1::UsersController < ApplicationController
 
   def profile_params
     params.require(:user).permit(:full_name, :address, :phone, :birthday)
-  end
-
-  # GET /api/v1/users/:id/avatar - Serve avatar directly
-  def avatar
-    user = User.find_by(id: params[:id])
-    
-    if user&.avatar&.attached?
-      send_data user.avatar.download, 
-                type: user.avatar.content_type, 
-                disposition: 'inline',
-                filename: user.avatar.filename.to_s
-    else
-      head :not_found
-    end
   end
 
   def can_update_user?
