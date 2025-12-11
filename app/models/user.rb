@@ -24,12 +24,13 @@ class User < ApplicationRecord
   
   def avatar_url
     if avatar.attached?
-      # Return full URL for API responses
-      Rails.application.routes.url_helpers.url_for(avatar)
+      # Use rails_blob_url which handles the redirect correctly
+      Rails.application.routes.url_helpers.rails_blob_url(avatar, host: 'chamcong.minhtranholdings.vn', protocol: 'https')
     else
       read_attribute(:avatar_url) # fallback to DB column
     end
-  rescue StandardError
+  rescue StandardError => e
+    Rails.logger.error "Avatar URL error: #{e.message}"
     nil
   end
   
