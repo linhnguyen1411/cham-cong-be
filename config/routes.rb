@@ -16,7 +16,12 @@ Rails.application.routes.draw do
           get :active
         end
       end
-      resources :users, only: [:index, :show, :create]
+      resources :users, only: [:index, :show, :create, :update] do
+        member do
+          patch :update_password
+          post :update_avatar
+        end
+      end
       resources :work_shifts, only: [:index, :create, :update, :destroy]
     end
   end
