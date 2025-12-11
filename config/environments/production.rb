@@ -31,6 +31,12 @@ Rails.application.configure do
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
   config.active_storage.service = :local
+  
+  # Configure Active Storage URL options for API responses
+  Rails.application.routes.default_url_options = { 
+    host: 'chamcong.minhtranholdings.vn',
+    protocol: 'https'
+  }
 
   # Mount Action Cable outside main process or domain.
   # config.action_cable.mount_path = nil

@@ -24,10 +24,13 @@ class User < ApplicationRecord
   
   def avatar_url
     if avatar.attached?
-      Rails.application.routes.url_helpers.rails_blob_path(avatar, only_path: true)
+      # Return full URL for API responses
+      Rails.application.routes.url_helpers.url_for(avatar)
     else
       read_attribute(:avatar_url) # fallback to DB column
     end
+  rescue StandardError
+    nil
   end
   
   def as_json(options = {})
