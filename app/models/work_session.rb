@@ -57,11 +57,19 @@ class WorkSession < ApplicationRecord
   end
   
   def find_matching_shift(session_minutes)
-    # Tìm shift gần nhất mà có start_time <= session time
+    # Tìm shift gần nhất thuộc department của user
     matching_shift = nil
     max_shift_minutes = -1
     
-    WorkShift.all.each do |shift|
+    # Lấy các ca làm việc của department mà user thuộc về
+    shifts = if user&.department_id.present?
+      WorkShift.where(department_id: user.department_id)
+    else
+      # Fallback: nếu user chưa phân khối, lấy shifts không có department hoặc tất cả
+      WorkShift.where(department_id: nil)
+    end
+    
+    shifts.each do |shift|
       shift_minutes = time_to_minutes(shift.start_time)
       
       # Shift phải bắt đầu trước hoặc bằng thời gian check-in
