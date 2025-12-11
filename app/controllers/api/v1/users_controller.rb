@@ -27,7 +27,10 @@ class Api::V1::UsersController < ApplicationController
       return render json: { error: 'Không có quyền cập nhật thông tin này' }, status: :forbidden
     end
     
-    if @user.update(profile_params)
+    # Admin can update more fields
+    permitted_params = @current_user.admin? ? admin_update_params : profile_params
+    
+    if @user.update(permitted_params)
       render json: @user, status: :ok
     else
       render json: @user.errors, status: :unprocessable_entity
@@ -101,11 +104,15 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def user_params
-    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role)
+    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :branch_id, :work_address)
   end
 
   def profile_params
-    params.require(:user).permit(:full_name, :address, :phone, :birthday)
+    params.require(:user).permit(:full_name, :address, :phone, :birthday, :work_address)
+  end
+
+  def admin_update_params
+    params.require(:user).permit(:full_name, :address, :phone, :birthday, :work_address, :role, :branch_id)
   end
 
   def can_update_user?

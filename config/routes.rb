@@ -24,6 +24,7 @@ Rails.application.routes.draw do
         end
       end
       resources :work_shifts, only: [:index, :create, :update, :destroy]
+      resources :branches, only: [:index, :show, :create, :update, :destroy]
     end
   end
 end

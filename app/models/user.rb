@@ -1,6 +1,7 @@
 class User < ApplicationRecord
   has_secure_password
   has_one_attached :avatar
+  belongs_to :branch, optional: true
   
   validates :username, presence: true, uniqueness: true
   validates :password, presence: true, length: { minimum: 6 }, on: :create
@@ -37,6 +38,8 @@ class User < ApplicationRecord
   def as_json(options = {})
     json = super(options.merge(except: :password_digest))
     json['avatar_url'] = avatar_url
+    json['branch_name'] = branch&.name
+    json['branch_address'] = branch&.address
     json
   end
 
