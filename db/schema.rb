@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_12_11_011827) do
+ActiveRecord::Schema[7.1].define(version: 2025_12_11_035509) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -50,6 +50,21 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_011827) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "branches", force: :cascade do |t|
+    t.string "name"
+    t.string "address"
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "departments", force: :cascade do |t|
+    t.string "name"
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "username", null: false
     t.string "password_digest", null: false
@@ -61,6 +76,11 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_011827) do
     t.string "address"
     t.string "phone"
     t.date "birthday"
+    t.bigint "branch_id"
+    t.string "work_address"
+    t.bigint "department_id"
+    t.index ["branch_id"], name: "index_users_on_branch_id"
+    t.index ["department_id"], name: "index_users_on_department_id"
     t.index ["username"], name: "index_users_on_username", unique: true
   end
 
@@ -98,11 +118,16 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_011827) do
     t.integer "late_threshold", default: 30
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "department_id"
+    t.index ["department_id"], name: "index_work_shifts_on_department_id"
     t.index ["name"], name: "index_work_shifts_on_name", unique: true
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "users", "branches"
+  add_foreign_key "users", "departments"
   add_foreign_key "work_sessions", "users"
   add_foreign_key "work_sessions", "work_shifts"
+  add_foreign_key "work_shifts", "departments"
 end

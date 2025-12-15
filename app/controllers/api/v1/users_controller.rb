@@ -4,7 +4,7 @@ class Api::V1::UsersController < ApplicationController
   before_action :set_user, only: [:show, :update, :update_password, :update_avatar]
 
   def index
-    @users = User.staff.most_active
+  @users = User.staff.order(created_at: :desc)
     render json: @users, status: :ok
   end
 
