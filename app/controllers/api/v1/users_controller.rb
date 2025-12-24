@@ -104,7 +104,7 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def user_params
-    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :branch_id, :work_address)
+    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :branch_id, :department_id, :position_id, :work_address)
   end
 
   def profile_params
@@ -112,7 +112,7 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def admin_update_params
-    params.require(:user).permit(:full_name, :address, :phone, :birthday, :work_address, :role, :branch_id, :department_id)
+    params.require(:user).permit(:full_name, :address, :phone, :birthday, :work_address, :role, :branch_id, :department_id, :position_id)
   end
 
   def can_update_user?

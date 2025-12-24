@@ -4,6 +4,6 @@ class Department < ApplicationRecord
 
   validates :name, presence: true, uniqueness: true
 
-  # Seed data examples:
-  # Khối văn phòng, Khối công trình, Khối nhà hàng, Khối khách sạn
+  # ip_address: string - IP cho phép checkin của khối
+  # Ví dụ: "129.231.1.115"
 end

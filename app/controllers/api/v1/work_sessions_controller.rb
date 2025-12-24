@@ -24,10 +24,13 @@ module Api
             duration_minutes: s.duration_minutes,
             date: s.date,
             work_shift_id: s.work_shift_id,
+            shift_name: s.work_shift&.name,
+            shift_registration_id: s.shift_registration_id,
             is_on_time: s.is_on_time,
             minutes_late: s.minutes_late,
             is_early_checkout: s.is_early_checkout,
             minutes_before_end: s.minutes_before_end,
+            forgot_checkout: s.forgot_checkout,
             work_summary: s.work_summary,
             challenges: s.challenges,
             suggestions: s.suggestions,
@@ -83,13 +86,25 @@ module Api
       def active
         # Lấy param user_id từ query string hoặc từ current_user
         uid = params[:user_id] 
-        @session = WorkSession.where(user_id: uid, end_time: nil).last
+        @session = WorkSession.where(user_id: uid, end_time: nil, forgot_checkout: false).last
         
         if @session
           render json: @session
         else
           render json: nil # Trả về null để frontend biết không có active session
         end
+      end
+      
+      # POST /api/v1/work_sessions/process_forgot_checkouts
+      # Được gọi bởi cron job hoặc manual trigger
+      def process_forgot_checkouts
+        WorkSession.process_forgot_checkouts!
+        
+        forgot_count = WorkSession.where(forgot_checkout: true).count
+        render json: { 
+          message: 'Đã xử lý các phiên quên checkout',
+          forgot_checkout_count: forgot_count
+        }
       end
 
       private

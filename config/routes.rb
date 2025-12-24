@@ -14,6 +14,7 @@ Rails.application.routes.draw do
       resources :work_sessions, only: [:index, :create, :update, :show] do
         collection do
           get :active
+          post :process_forgot_checkouts
         end
       end
       resources :users, only: [:index, :show, :create, :update] do
@@ -26,6 +27,20 @@ Rails.application.routes.draw do
       resources :work_shifts, only: [:index, :create, :update, :destroy]
       resources :branches, only: [:index, :show, :create, :update, :destroy]
       resources :departments, only: [:index, :show, :create, :update, :destroy]
+      resources :positions, only: [:index, :show, :create, :update, :destroy]
+      resources :shift_registrations, only: [:index, :show, :create, :update, :destroy] do
+        collection do
+          get :my_registrations
+          get :available_shifts
+          get :pending
+          post :bulk_create
+          post :bulk_approve
+        end
+        member do
+          post :approve
+          post :reject
+        end
+      end
     end
   end
 end

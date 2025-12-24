@@ -3,6 +3,7 @@ class User < ApplicationRecord
   has_one_attached :avatar
   belongs_to :branch, optional: true
   belongs_to :department, optional: true
+  belongs_to :position, optional: true
   
   validates :username, presence: true, uniqueness: true
   validates :password, presence: true, length: { minimum: 6 }, on: :create
@@ -11,6 +12,7 @@ class User < ApplicationRecord
   enum role: { admin: 0, staff: 1 }
 
   has_many :work_sessions, dependent: :destroy
+  has_many :shift_registrations, dependent: :destroy
 
   scope :staff, -> { where(role: :staff) }
   scope :admin, -> { where(role: :admin) }
@@ -42,6 +44,8 @@ class User < ApplicationRecord
     json['branch_name'] = branch&.name
     json['branch_address'] = branch&.address
     json['department_name'] = department&.name
+    json['position_name'] = position&.name
+    json['position_level'] = position&.level
     json
   end
 

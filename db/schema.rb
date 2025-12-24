@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_12_11_035509) do
+ActiveRecord::Schema[7.1].define(version: 2025_12_20_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -63,6 +63,40 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_035509) do
     t.text "description"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "ip_address"
+  end
+
+  create_table "positions", force: :cascade do |t|
+    t.string "name", null: false
+    t.text "description"
+    t.bigint "branch_id"
+    t.bigint "department_id"
+    t.integer "level", default: 0
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["branch_id"], name: "index_positions_on_branch_id"
+    t.index ["department_id"], name: "index_positions_on_department_id"
+    t.index ["name", "branch_id", "department_id"], name: "idx_positions_unique", unique: true
+  end
+
+  create_table "shift_registrations", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "work_shift_id", null: false
+    t.date "work_date", null: false
+    t.date "week_start", null: false
+    t.integer "status", default: 0
+    t.text "note"
+    t.text "admin_note"
+    t.bigint "approved_by_id"
+    t.datetime "approved_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_shift_registrations_on_approved_by_id"
+    t.index ["status"], name: "index_shift_registrations_on_status"
+    t.index ["user_id", "work_date", "work_shift_id"], name: "idx_shift_reg_user_date_shift", unique: true
+    t.index ["user_id"], name: "index_shift_registrations_on_user_id"
+    t.index ["week_start"], name: "index_shift_registrations_on_week_start"
+    t.index ["work_shift_id"], name: "index_shift_registrations_on_work_shift_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -79,8 +113,10 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_035509) do
     t.bigint "branch_id"
     t.string "work_address"
     t.bigint "department_id"
+    t.bigint "position_id"
     t.index ["branch_id"], name: "index_users_on_branch_id"
     t.index ["department_id"], name: "index_users_on_department_id"
+    t.index ["position_id"], name: "index_users_on_position_id"
     t.index ["username"], name: "index_users_on_username", unique: true
   end
 
@@ -107,6 +143,9 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_035509) do
     t.text "challenges"
     t.text "suggestions"
     t.text "notes"
+    t.boolean "forgot_checkout", default: false
+    t.bigint "shift_registration_id"
+    t.index ["shift_registration_id"], name: "index_work_sessions_on_shift_registration_id"
     t.index ["user_id"], name: "index_work_sessions_on_user_id"
     t.index ["work_shift_id"], name: "index_work_sessions_on_work_shift_id"
   end
@@ -125,8 +164,15 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_11_035509) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "positions", "branches"
+  add_foreign_key "positions", "departments"
+  add_foreign_key "shift_registrations", "users"
+  add_foreign_key "shift_registrations", "users", column: "approved_by_id"
+  add_foreign_key "shift_registrations", "work_shifts"
   add_foreign_key "users", "branches"
   add_foreign_key "users", "departments"
+  add_foreign_key "users", "positions"
+  add_foreign_key "work_sessions", "shift_registrations"
   add_foreign_key "work_sessions", "users"
   add_foreign_key "work_sessions", "work_shifts"
   add_foreign_key "work_shifts", "departments"
