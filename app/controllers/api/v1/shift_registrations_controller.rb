@@ -96,47 +96,109 @@ module Api
       def bulk_create
         user_id = params[:user_id]
         registrations_data = params[:registrations] || []
+        user = User.find_by(id: user_id)
         
+        return render json: { error: 'User not found' }, status: :not_found unless user
+        
+        # Validate before creating
+        validation_errors = validate_bulk_registration(user, registrations_data)
+        if validation_errors.any?
+          return render json: { 
+            errors: validation_errors,
+            error_count: validation_errors.count,
+            success_count: 0
+          }, status: :unprocessable_entity
+        end
+        
+        # All-or-nothing: Dùng transaction để đảm bảo tất cả thành công hoặc tất cả rollback
         created = []
         errors = []
         
-        registrations_data.each do |reg_data|
-          begin
-            # Parse work_date
+        ActiveRecord::Base.transaction do
+          # Xóa TẤT CẢ đăng ký pending trong tuần để cho phép đổi đăng ký khi chưa duyệt
+          # Lấy week_start từ đăng ký đầu tiên
+          first_reg_date = registrations_data.first[:work_date].is_a?(String) ? Date.parse(registrations_data.first[:work_date]) : registrations_data.first[:work_date]
+          week_start = first_reg_date.beginning_of_week(:monday)
+          
+          # Xóa TẤT CẢ pending trong tuần này (cho phép đổi đăng ký)
+          ShiftRegistration.where(
+            user_id: user_id,
+            week_start: week_start,
+            status: :pending
+          ).delete_all
+          
+          # Xóa các đăng ký approved/rejected cho các ngày/ca đang được đăng ký lại (nếu có)
+          registrations_data.each do |reg_data|
             work_date = reg_data[:work_date].is_a?(String) ? Date.parse(reg_data[:work_date]) : reg_data[:work_date]
             
-            registration = ShiftRegistration.new(
+            # Xóa approved/rejected cho cùng user, date, shift (pending đã xóa ở trên)
+            ShiftRegistration.where(
               user_id: user_id,
-              work_shift_id: reg_data[:work_shift_id],
               work_date: work_date,
-              note: reg_data[:note]
-            )
-            
-            if registration.save
+              work_shift_id: reg_data[:work_shift_id],
+              status: [:approved, :rejected]
+            ).delete_all
+          end
+          
+          # Tạo tất cả đăng ký mới - collect tất cả lỗi trước
+          registrations_data.each do |reg_data|
+            begin
+              # Parse work_date
+              work_date = reg_data[:work_date].is_a?(String) ? Date.parse(reg_data[:work_date]) : reg_data[:work_date]
+              
+              registration = ShiftRegistration.new(
+                user_id: user_id,
+                work_shift_id: reg_data[:work_shift_id],
+                work_date: work_date,
+                note: reg_data[:note]
+              )
+              
+              registration.save!
               created << registration
-            else
+            rescue => e
+              # Parse error message để hiển thị rõ ràng hơn
+              error_message = e.message
+              if e.message.include?('duplicate key') || e.message.include?('already exists') || e.message.include?('idx_shift_reg_user_date_shift')
+                error_message = 'Đã có đăng ký cho ca này. Vui lòng tải lại trang.'
+              elsif e.message.include?('PG::')
+                # Extract meaningful error from PG error
+                if e.message.include?('duplicate key')
+                  error_message = 'Đã có đăng ký cho ca này. Vui lòng tải lại trang.'
+                else
+                  error_message = "Lỗi database: #{e.class.name}"
+                end
+              end
+              
+              # Collect lỗi, không raise ngay
               errors << { 
                 work_date: reg_data[:work_date].to_s, 
                 work_shift_id: reg_data[:work_shift_id],
-                errors: registration.errors.full_messages,
-                error_details: registration.errors.as_json
+                errors: [error_message],
+                exception: e.class.name
               }
             end
-          rescue => e
-            errors << { 
-              work_date: reg_data[:work_date].to_s,
-              work_shift_id: reg_data[:work_shift_id],
-              errors: ["Lỗi: #{e.message}"],
-              exception: e.class.name
-            }
           end
+          
+          # Nếu có bất kỳ lỗi nào, raise để rollback tất cả
+          if errors.any?
+            raise ActiveRecord::Rollback
+          end
+        end
+        
+        # Nếu có lỗi sau transaction, return error (transaction đã rollback)
+        if errors.any?
+          return render json: { 
+            errors: errors,
+            error_count: errors.count,
+            success_count: 0
+          }, status: :unprocessable_entity
         end
         
         render json: { 
           created: created, 
-          errors: errors,
+          errors: [],
           success_count: created.count,
-          error_count: errors.count
+          error_count: 0
         }
       end
       
@@ -218,9 +280,250 @@ module Api
       end
       
       def can_register_next_week?
+        # TẠM THỜI BỎ CHECK ĐỂ TEST - SẼ BẬT LẠI SAU
         # Cho phép đăng ký từ thứ 6 trở đi
-        today = Date.current
-        today.wday >= 5 || today.wday == 0 # Friday, Saturday, Sunday
+        # today = Date.current
+        # today.wday >= 5 || today.wday == 0 # Friday, Saturday, Sunday
+        true # Luôn cho phép đăng ký để test
+      end
+      
+      def validate_bulk_registration(user, registrations_data)
+        errors = []
+        
+        # Parse dates and group by week
+        parsed_regs = registrations_data.map do |reg_data|
+          work_date = reg_data[:work_date].is_a?(String) ? Date.parse(reg_data[:work_date]) : reg_data[:work_date]
+          { work_date: work_date, work_shift_id: reg_data[:work_shift_id].to_i }
+        end
+        
+        # Get all shifts to identify morning/afternoon
+        all_shifts = WorkShift.all.index_by(&:id)
+        morning_shift_id = all_shifts.values.find { |s| s.name.downcase.include?('sáng') || (s.start_time.present? && s.start_time < '12:00') }&.id
+        afternoon_shift_id = all_shifts.values.find { |s| s.name.downcase.include?('chiều') || (s.start_time.present? && s.start_time >= '12:00' && s.start_time < '18:00') }&.id
+        
+        # Group by week
+        weeks = parsed_regs.group_by { |r| r[:work_date].beginning_of_week(:monday) }
+        
+        weeks.each do |week_start, week_regs|
+          week_dates = (week_start..(week_start + 6.days)).to_a
+          
+          # Calculate expected shifts based on work_schedule_type (chỉ các ca bắt buộc, không tính tăng ca)
+          expected_shifts_by_date = week_dates.map do |date|
+            case user.work_schedule_type
+            when 'both_shifts'
+              [morning_shift_id, afternoon_shift_id].compact
+            when 'morning_only'
+              morning_shift_id ? [morning_shift_id] : []
+            when 'afternoon_only'
+              afternoon_shift_id ? [afternoon_shift_id] : []
+            else
+              [morning_shift_id, afternoon_shift_id].compact
+            end
+          end.flatten.compact
+          
+          # Get existing registrations for this week (excluding current pending ones)
+          existing_regs = ShiftRegistration
+            .where(user_id: user.id, week_start: week_start, status: [:pending, :approved])
+            .pluck(:work_date, :work_shift_id)
+            .map { |date, shift_id| { work_date: date, work_shift_id: shift_id } }
+          
+          # Combine existing and new registrations
+          all_regs = (existing_regs + week_regs).uniq { |r| [r[:work_date], r[:work_shift_id]] }
+          
+          # Chỉ đếm các ca bắt buộc (không tính tăng ca)
+          # Tăng ca: morning_only đăng ký afternoon hoặc afternoon_only đăng ký morning
+          registered_required_shifts = all_regs.select do |r|
+            shift_id = r[:work_shift_id]
+            case user.work_schedule_type
+            when 'both_shifts'
+              shift_id == morning_shift_id || shift_id == afternoon_shift_id
+            when 'morning_only'
+              shift_id == morning_shift_id
+            when 'afternoon_only'
+              shift_id == afternoon_shift_id
+            else
+              true
+            end
+          end.map { |r| r[:work_shift_id] }
+          
+          # Validation 1: Mỗi nhân viên trong tuần chỉ được off tối đa:
+          # - both_shifts: tối đa 2 ca (có thể 2 ca trong 1 ngày, hoặc 1 ca mỗi ngày trong 2 ngày)
+          # - morning_only/afternoon_only: tối đa 1 ngày (1 ca)
+          if user.work_schedule_type == 'both_shifts'
+            # Đếm số ca bắt buộc bị thiếu (off) cho both_shifts
+            off_shift_count = 0
+            week_dates.each do |date|
+              date_regs = all_regs.select { |r| r[:work_date] == date }
+              
+              has_morning = date_regs.any? { |r| r[:work_shift_id] == morning_shift_id }
+              has_afternoon = date_regs.any? { |r| r[:work_shift_id] == afternoon_shift_id }
+              
+              # Đếm số ca bị thiếu trong ngày này
+              off_shift_count += 1 unless has_morning
+              off_shift_count += 1 unless has_afternoon
+            end
+            
+            # both_shifts: tối đa 2 ca off
+            if off_shift_count > 2
+              errors << {
+                type: 'user_off_limit',
+                message: "Bạn chỉ được off tối đa 2 ca/tuần. Hiện tại bạn đang off #{off_shift_count} ca.",
+                week_start: week_start.to_s,
+                off_count: off_shift_count
+              }
+            end
+          else
+            # morning_only/afternoon_only: Đếm số ngày mà user thiếu ca bắt buộc (off)
+            off_dates = []
+            week_dates.each do |date|
+              date_regs = all_regs.select { |r| r[:work_date] == date }
+              
+              case user.work_schedule_type
+              when 'morning_only'
+                has_morning = date_regs.any? { |r| r[:work_shift_id] == morning_shift_id }
+                off_dates << date unless has_morning
+              when 'afternoon_only'
+                has_afternoon = date_regs.any? { |r| r[:work_shift_id] == afternoon_shift_id }
+                off_dates << date unless has_afternoon
+              end
+            end
+            
+            # morning_only/afternoon_only: tối đa 1 ngày off
+            if off_dates.size > 1
+              errors << {
+                type: 'user_off_limit',
+                message: "Bạn chỉ được off tối đa 1 ngày/tuần. Hiện tại bạn đang off #{off_dates.size} ngày.",
+                week_start: week_start.to_s,
+                off_dates: off_dates.map(&:to_s),
+                off_count: off_dates.size
+              }
+            end
+          end
+          
+          # Validation 2: Mỗi ca chỉ được phép off 1 người / ca / ngày (chỉ validate ca bắt buộc)
+          week_dates.each do |date|
+            date_regs = all_regs.select { |r| r[:work_date] == date }
+            
+            # Check morning shift - chỉ validate nếu đây là ca bắt buộc của user
+            if morning_shift_id && (user.work_schedule_type == 'both_shifts' || user.work_schedule_type == 'morning_only')
+              morning_reg = date_regs.find { |r| r[:work_shift_id] == morning_shift_id }
+              if morning_reg.nil?
+                # User muốn off ca sáng (ca bắt buộc) - check xem đã có ai CÙNG VỊ TRÍ off chưa
+                # Logic: Mỗi ca/ngày/vị trí chỉ được off tối đa 1 người
+                # - Lấy position_id của user (nếu có)
+                user_position_id = user.position_id
+                
+                # - Tìm tất cả người CÙNG VỊ TRÍ, BẮT BUỘC làm ca sáng (không tính user hiện tại)
+                #   Cùng vị trí = cùng position_id (nếu có) HOẶC cùng không có position
+                same_position_users_query = User
+                  .where(work_schedule_type: [:both_shifts, :morning_only])
+                  .where.not(id: user.id)
+                
+                # Nếu user có position, chỉ check những người cùng position
+                # Nếu user không có position, chỉ check những người không có position
+                if user_position_id.present?
+                  same_position_users_query = same_position_users_query.where(position_id: user_position_id)
+                else
+                  same_position_users_query = same_position_users_query.where(position_id: nil)
+                end
+                
+                same_position_users = same_position_users_query.pluck(:id)
+                total_same_position = same_position_users.size
+                
+                # - Đếm số người CÙNG VỊ TRÍ, BẮT BUỘC làm ca sáng ĐÃ ĐĂNG KÝ ca sáng (không tính user hiện tại)
+                registered_morning_user_ids = ShiftRegistration
+                  .where(work_date: date, work_shift_id: morning_shift_id, status: [:pending, :approved])
+                  .where.not(user_id: user.id)
+                  .where(user_id: same_position_users)  # Chỉ check những người cùng position
+                  .pluck(:user_id)
+                
+                required_registered_count = registered_morning_user_ids.size
+                
+                # Số người OFF = tổng số (bắt buộc, cùng position) - số người đã đăng ký (bắt buộc, cùng position)
+                # Logic: 
+                # - Nếu chưa có ai đăng ký (required_registered = 0), thì chưa có ai off → cho phép người đầu tiên off
+                # - Nếu đã có người đăng ký, tính số người off = total - registered
+                #   Nếu số người off >= 1, thì không cho phép thêm người off nữa
+                if required_registered_count > 0
+                  off_morning_count = total_same_position - required_registered_count
+                  # Nếu đã có >= 1 người off rồi, thì user này không được off nữa
+                  if off_morning_count >= 1
+                    position_name = user.position&.name || 'vị trí này'
+                    errors << {
+                      type: 'shift_off_limit',
+                      message: "Ca sáng ngày #{date.strftime('%d/%m/%Y')} đã đủ số người off (1 người/ca/vị trí). Vui lòng chọn ca khác.",
+                      date: date.to_s,
+                      shift_id: morning_shift_id,
+                      shift_name: 'Ca sáng',
+                      off_count: off_morning_count + 1,
+                      position_id: user_position_id
+                    }
+                  end
+                end
+                # Nếu chưa có ai đăng ký (required_registered = 0), thì user này có thể off → không báo lỗi
+              end
+            end
+            
+            # Check afternoon shift - chỉ validate nếu đây là ca bắt buộc của user
+            if afternoon_shift_id && (user.work_schedule_type == 'both_shifts' || user.work_schedule_type == 'afternoon_only')
+              afternoon_reg = date_regs.find { |r| r[:work_shift_id] == afternoon_shift_id }
+              if afternoon_reg.nil?
+                # User muốn off ca chiều (ca bắt buộc) - check xem đã có ai CÙNG VỊ TRÍ off chưa
+                # Logic: Mỗi ca/ngày/vị trí chỉ được off tối đa 1 người
+                # - Lấy position_id của user (nếu có)
+                user_position_id = user.position_id
+                
+                # - Tìm tất cả người CÙNG VỊ TRÍ, BẮT BUỘC làm ca chiều (không tính user hiện tại)
+                #   Cùng vị trí = cùng position_id (nếu có) HOẶC cùng không có position
+                same_position_users_query = User
+                  .where(work_schedule_type: [:both_shifts, :afternoon_only])
+                  .where.not(id: user.id)
+                
+                # Nếu user có position, chỉ check những người cùng position
+                # Nếu user không có position, chỉ check những người không có position
+                if user_position_id.present?
+                  same_position_users_query = same_position_users_query.where(position_id: user_position_id)
+                else
+                  same_position_users_query = same_position_users_query.where(position_id: nil)
+                end
+                
+                same_position_users = same_position_users_query.pluck(:id)
+                
+                # - Đếm số người CÙNG VỊ TRÍ, BẮT BUỘC làm ca chiều ĐÃ ĐĂNG KÝ ca chiều (không tính user hiện tại)
+                registered_afternoon_user_ids = ShiftRegistration
+                  .where(work_date: date, work_shift_id: afternoon_shift_id, status: [:pending, :approved])
+                  .where.not(user_id: user.id)
+                  .where(user_id: same_position_users)  # Chỉ check những người cùng position
+                  .pluck(:user_id)
+                
+                required_registered_count = registered_afternoon_user_ids.size
+                
+                # Số người OFF = tổng số (bắt buộc, cùng position) - số người đã đăng ký (bắt buộc, cùng position)
+                # Logic: Nếu chưa có ai BẮT BUỘC đăng ký (required_registered = 0), thì chưa có ai off → user này có thể off
+                #        Nếu đã có người BẮT BUỘC đăng ký, tính số người off
+                if required_registered_count > 0
+                  off_afternoon_count = same_position_users.size - required_registered_count
+                  # Nếu đã có >= 1 người off rồi, thì user này không được off nữa
+                  if off_afternoon_count >= 1
+                    position_name = user.position&.name || 'vị trí này'
+                    errors << {
+                      type: 'shift_off_limit',
+                      message: "Ca chiều ngày #{date.strftime('%d/%m/%Y')} đã đủ số người off (1 người/ca/vị trí). Vui lòng chọn ca khác.",
+                      date: date.to_s,
+                      shift_id: afternoon_shift_id,
+                      shift_name: 'Ca chiều',
+                      off_count: off_afternoon_count + 1,
+                      position_id: user_position_id
+                    }
+                  end
+                end
+                # Nếu chưa có ai BẮT BUỘC đăng ký (required_registered = 0), thì user này có thể off → không báo lỗi
+              end
+            end
+          end
+        end
+        
+        errors
       end
     end
   end

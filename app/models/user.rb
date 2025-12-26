@@ -10,12 +10,16 @@ class User < ApplicationRecord
   validates :password, length: { minimum: 6 }, allow_blank: true, on: :update
   validates :full_name, presence: true
   enum role: { admin: 0, staff: 1 }
+  enum work_schedule_type: { both_shifts: 0, morning_only: 1, afternoon_only: 2 }, _default: :both_shifts
+  enum status: { active: 0, deactive: 1 }, _default: :active
 
   has_many :work_sessions, dependent: :destroy
   has_many :shift_registrations, dependent: :destroy
 
   scope :staff, -> { where(role: :staff) }
   scope :admin, -> { where(role: :admin) }
+  scope :active_users, -> { where(status: :active) }
+  scope :deactive_users, -> { where(status: :deactive) }
   scope :most_active, -> { joins(:work_sessions).group(:id).order('COUNT(work_sessions.id) DESC') }
 
   def total_work_sessions

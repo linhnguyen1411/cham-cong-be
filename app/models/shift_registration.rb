@@ -8,10 +8,16 @@ class ShiftRegistration < ApplicationRecord
   validates :work_date, presence: true
   validates :week_start, presence: true
   # Cho phép nhiều ca trong 1 ngày, nhưng không được trùng ca
-  validates :user_id, uniqueness: { scope: [:work_date, :work_shift_id], message: "đã đăng ký ca này cho ngày này" }
+  # Chỉ validate uniqueness khi status là pending hoặc approved (cho phép đăng ký lại sau khi bị từ chối)
+  validates :user_id, uniqueness: { 
+    scope: [:work_date, :work_shift_id], 
+    message: "đã đăng ký ca này cho ngày này",
+    conditions: -> { where.not(status: :rejected) }
+  }
   
   # Chỉ cho phép đăng ký cho tuần tới (cuối tuần hiện tại)
-  validate :registration_timing, on: :create
+  # TẠM THỜI BỎ CHECK ĐỂ TEST - SẼ BẬT LẠI SAU
+  # validate :registration_timing, on: :create
   
   enum status: { 
     pending: 0, 

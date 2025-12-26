@@ -1,10 +1,11 @@
 class Api::V1::UsersController < ApplicationController
   before_action :authorize_request, except: [:avatar]
-  before_action :check_admin_permission, only: [:create]
-  before_action :set_user, only: [:show, :update, :update_password, :update_avatar]
+  before_action :check_admin_permission, only: [:create, :deactivate]
+  before_action :set_user, only: [:show, :update, :update_password, :update_avatar, :deactivate]
 
   def index
-  @users = User.staff.order(created_at: :desc)
+    # Show all staff (active and deactive) - frontend will filter
+    @users = User.staff.order(created_at: :desc)
     render json: @users, status: :ok
   end
 
@@ -97,6 +98,19 @@ class Api::V1::UsersController < ApplicationController
     end
   end
 
+  # PATCH /api/v1/users/:id/deactivate - Deactivate user (set status to deactive)
+  def deactivate
+    unless @current_user.admin?
+      return render json: { error: 'Chỉ admin mới có quyền thực hiện thao tác này' }, status: :forbidden
+    end
+
+    if @user.update(status: :deactive)
+      render json: { message: 'Đã đánh dấu nhân viên nghỉ việc', user: @user }, status: :ok
+    else
+      render json: @user.errors, status: :unprocessable_entity
+    end
+  end
+
   private
 
   def set_user
@@ -112,7 +126,7 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def admin_update_params
-    params.require(:user).permit(:full_name, :address, :phone, :birthday, :work_address, :role, :branch_id, :department_id, :position_id)
+    params.require(:user).permit(:full_name, :address, :phone, :birthday, :work_address, :role, :branch_id, :department_id, :position_id, :password, :work_schedule_type)
   end
 
   def can_update_user?
