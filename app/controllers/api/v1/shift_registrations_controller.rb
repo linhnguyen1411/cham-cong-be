@@ -238,12 +238,17 @@ module Api
       end
       
       # POST /api/v1/shift_registrations/:id/reject
+      # Khi admin từ chối -> xóa luôn đăng ký (không giữ lại lịch sử)
       def reject
         admin_user = User.find_by(id: params[:admin_id])
         
         begin
-          @registration.reject!(admin_user, params[:note])
-          render json: @registration
+          registration_id = @registration.id
+          @registration.destroy
+          render json: { 
+            message: 'Đã từ chối và xóa đăng ký',
+            id: registration_id
+          }, status: :ok
         rescue => e
           render json: { error: e.message }, status: :unprocessable_entity
         end
@@ -363,11 +368,12 @@ module Api
               off_shift_count += 1 unless has_afternoon
             end
             
-            # both_shifts: tối đa 2 ca off
-            if off_shift_count > 2
+            # both_shifts: tối đa X ca off (configurable)
+            max_off_shifts = AppSetting.current.max_user_off_shifts_per_week
+            if off_shift_count > max_off_shifts
               errors << {
                 type: 'user_off_limit',
-                message: "Bạn chỉ được off tối đa 2 ca/tuần. Hiện tại bạn đang off #{off_shift_count} ca.",
+                message: "Bạn chỉ được off tối đa #{max_off_shifts} ca/tuần. Hiện tại bạn đang off #{off_shift_count} ca.",
                 week_start: week_start.to_s,
                 off_count: off_shift_count
               }
@@ -388,11 +394,12 @@ module Api
               end
             end
             
-            # morning_only/afternoon_only: tối đa 1 ngày off
-            if off_dates.size > 1
+            # morning_only/afternoon_only: tối đa X ngày off (configurable)
+            max_off_days = AppSetting.current.max_user_off_days_per_week
+            if off_dates.size > max_off_days
               errors << {
                 type: 'user_off_limit',
-                message: "Bạn chỉ được off tối đa 1 ngày/tuần. Hiện tại bạn đang off #{off_dates.size} ngày.",
+                message: "Bạn chỉ được off tối đa #{max_off_days} ngày/tuần. Hiện tại bạn đang off #{off_dates.size} ngày.",
                 week_start: week_start.to_s,
                 off_dates: off_dates.map(&:to_s),
                 off_count: off_dates.size
@@ -400,7 +407,11 @@ module Api
             end
           end
           
-          # Validation 2: Mỗi ca chỉ được phép off 1 người / ca / ngày (chỉ validate ca bắt buộc)
+          # Validation 2: Mỗi ca chỉ được phép off tối đa X người / ca / ngày / vị trí (chỉ validate ca bắt buộc)
+          # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần VÀ không đăng ký ca bắt buộc của ngày đó
+          # Ví dụ: Nhân viên A đã đăng ký thứ 2,3,4,5,7,CN nhưng không đăng ký thứ 6 => A đã "off" thứ 6
+          # => Các nhân viên khác (cùng vị trí) không được off thứ 6 nữa (nếu đã đủ số người off tối đa)
+          
           week_dates.each do |date|
             date_regs = all_regs.select { |r| r[:work_date] == date }
             
@@ -409,7 +420,7 @@ module Api
               morning_reg = date_regs.find { |r| r[:work_shift_id] == morning_shift_id }
               if morning_reg.nil?
                 # User muốn off ca sáng (ca bắt buộc) - check xem đã có ai CÙNG VỊ TRÍ off chưa
-                # Logic: Mỗi ca/ngày/vị trí chỉ được off tối đa 1 người
+                # Logic: Mỗi ca/ngày/vị trí chỉ được off tối đa X người
                 # - Lấy position_id của user (nếu có)
                 user_position_id = user.position_id
                 
@@ -439,28 +450,38 @@ module Api
                 
                 required_registered_count = registered_morning_user_ids.size
                 
-                # Số người OFF = tổng số (bắt buộc, cùng position) - số người đã đăng ký (bắt buộc, cùng position)
-                # Logic: 
-                # - Nếu chưa có ai đăng ký (required_registered = 0), thì chưa có ai off → cho phép người đầu tiên off
-                # - Nếu đã có người đăng ký, tính số người off = total - registered
-                #   Nếu số người off >= 1, thì không cho phép thêm người off nữa
-                if required_registered_count > 0
-                  off_morning_count = total_same_position - required_registered_count
-                  # Nếu đã có >= 1 người off rồi, thì user này không được off nữa
-                  if off_morning_count >= 1
-                    position_name = user.position&.name || 'vị trí này'
-                    errors << {
-                      type: 'shift_off_limit',
-                      message: "Ca sáng ngày #{date.strftime('%d/%m/%Y')} đã đủ số người off (1 người/ca/vị trí). Vui lòng chọn ca khác.",
-                      date: date.to_s,
-                      shift_id: morning_shift_id,
-                      shift_name: 'Ca sáng',
-                      off_count: off_morning_count + 1,
-                      position_id: user_position_id
-                    }
-                  end
+                # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
+                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (pending hoặc approved)
+                users_with_registrations = ShiftRegistration
+                  .where(week_start: week_start, status: [:pending, :approved])
+                  .where(user_id: same_position_users)
+                  .where.not(user_id: user.id)
+                  .distinct
+                  .pluck(:user_id)
+                
+                # Chỉ tính những người đã có đăng ký trong tuần là "off" nếu họ không đăng ký ca sáng ngày này
+                # Nếu user đã có đăng ký trong tuần VÀ không đăng ký ca sáng ngày này => tính là "off"
+                off_users = users_with_registrations.select do |other_user_id|
+                  # User này đã có đăng ký trong tuần nhưng KHÔNG đăng ký ca sáng ngày này
+                  !registered_morning_user_ids.include?(other_user_id)
                 end
-                # Nếu chưa có ai đăng ký (required_registered = 0), thì user này có thể off → không báo lỗi
+                
+                off_morning_count = off_users.size
+                
+                # Nếu đã có >= max_shift_off_count người off rồi, thì user này không được off nữa
+                max_shift_off = AppSetting.current.max_shift_off_count_per_day
+                if off_morning_count >= max_shift_off
+                  position_name = user.position&.name || 'vị trí này'
+                  errors << {
+                    type: 'shift_off_limit',
+                    message: "Ca sáng ngày #{date.strftime('%d/%m/%Y')} đã đủ số người off (#{max_shift_off} người/ca/vị trí). Vui lòng chọn ca khác.",
+                    date: date.to_s,
+                    shift_id: morning_shift_id,
+                    shift_name: 'Ca sáng',
+                    off_count: off_morning_count + 1,
+                    position_id: user_position_id
+                  }
+                end
               end
             end
             
@@ -469,7 +490,7 @@ module Api
               afternoon_reg = date_regs.find { |r| r[:work_shift_id] == afternoon_shift_id }
               if afternoon_reg.nil?
                 # User muốn off ca chiều (ca bắt buộc) - check xem đã có ai CÙNG VỊ TRÍ off chưa
-                # Logic: Mỗi ca/ngày/vị trí chỉ được off tối đa 1 người
+                # Logic: Mỗi ca/ngày/vị trí chỉ được off tối đa X người
                 # - Lấy position_id của user (nếu có)
                 user_position_id = user.position_id
                 
@@ -498,26 +519,37 @@ module Api
                 
                 required_registered_count = registered_afternoon_user_ids.size
                 
-                # Số người OFF = tổng số (bắt buộc, cùng position) - số người đã đăng ký (bắt buộc, cùng position)
-                # Logic: Nếu chưa có ai BẮT BUỘC đăng ký (required_registered = 0), thì chưa có ai off → user này có thể off
-                #        Nếu đã có người BẮT BUỘC đăng ký, tính số người off
-                if required_registered_count > 0
-                  off_afternoon_count = same_position_users.size - required_registered_count
-                  # Nếu đã có >= 1 người off rồi, thì user này không được off nữa
-                  if off_afternoon_count >= 1
-                    position_name = user.position&.name || 'vị trí này'
-                    errors << {
-                      type: 'shift_off_limit',
-                      message: "Ca chiều ngày #{date.strftime('%d/%m/%Y')} đã đủ số người off (1 người/ca/vị trí). Vui lòng chọn ca khác.",
-                      date: date.to_s,
-                      shift_id: afternoon_shift_id,
-                      shift_name: 'Ca chiều',
-                      off_count: off_afternoon_count + 1,
-                      position_id: user_position_id
-                    }
-                  end
+                # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
+                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (pending hoặc approved)
+                users_with_registrations = ShiftRegistration
+                  .where(week_start: week_start, status: [:pending, :approved])
+                  .where(user_id: same_position_users)
+                  .where.not(user_id: user.id)
+                  .distinct
+                  .pluck(:user_id)
+                
+                # Chỉ tính những người đã có đăng ký trong tuần là "off" nếu họ không đăng ký ca chiều ngày này
+                off_users = users_with_registrations.select do |other_user_id|
+                  # User này đã có đăng ký trong tuần nhưng KHÔNG đăng ký ca chiều ngày này
+                  !registered_afternoon_user_ids.include?(other_user_id)
                 end
-                # Nếu chưa có ai BẮT BUỘC đăng ký (required_registered = 0), thì user này có thể off → không báo lỗi
+                
+                off_afternoon_count = off_users.size
+                
+                # Nếu đã có >= max_shift_off_count người off rồi, thì user này không được off nữa
+                max_shift_off = AppSetting.current.max_shift_off_count_per_day
+                if off_afternoon_count >= max_shift_off
+                  position_name = user.position&.name || 'vị trí này'
+                  errors << {
+                    type: 'shift_off_limit',
+                    message: "Ca chiều ngày #{date.strftime('%d/%m/%Y')} đã đủ số người off (#{max_shift_off} người/ca/vị trí). Vui lòng chọn ca khác.",
+                    date: date.to_s,
+                    shift_id: afternoon_shift_id,
+                    shift_name: 'Ca chiều',
+                    off_count: off_afternoon_count + 1,
+                    position_id: user_position_id
+                  }
+                end
               end
             end
           end
