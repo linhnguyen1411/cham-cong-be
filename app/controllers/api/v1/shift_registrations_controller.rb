@@ -354,56 +354,60 @@ module Api
           # Validation 1: Mỗi nhân viên trong tuần chỉ được off tối đa:
           # - both_shifts: tối đa 2 ca (có thể 2 ca trong 1 ngày, hoặc 1 ca mỗi ngày trong 2 ngày)
           # - morning_only/afternoon_only: tối đa 1 ngày (1 ca)
-          if user.work_schedule_type == 'both_shifts'
-            # Đếm số ca bắt buộc bị thiếu (off) cho both_shifts
-            off_shift_count = 0
-            week_dates.each do |date|
-              date_regs = all_regs.select { |r| r[:work_date] == date }
-              
-              has_morning = date_regs.any? { |r| r[:work_shift_id] == morning_shift_id }
-              has_afternoon = date_regs.any? { |r| r[:work_shift_id] == afternoon_shift_id }
-              
-              # Đếm số ca bị thiếu trong ngày này
-              off_shift_count += 1 unless has_morning
-              off_shift_count += 1 unless has_afternoon
-            end
-            
-            # both_shifts: tối đa X ca off (configurable)
-            max_off_shifts = AppSetting.current.max_user_off_shifts_per_week
-            if off_shift_count > max_off_shifts
-              errors << {
-                type: 'user_off_limit',
-                message: "Bạn chỉ được off tối đa #{max_off_shifts} ca/tuần. Hiện tại bạn đang off #{off_shift_count} ca.",
-                week_start: week_start.to_s,
-                off_count: off_shift_count
-              }
-            end
-          else
-            # morning_only/afternoon_only: Đếm số ngày mà user thiếu ca bắt buộc (off)
-            off_dates = []
-            week_dates.each do |date|
-              date_regs = all_regs.select { |r| r[:work_date] == date }
-              
-              case user.work_schedule_type
-              when 'morning_only'
+          # LƯU Ý: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
+          # Nếu user chưa đăng ký gì cả → không tính là "off"
+          if all_regs.any?
+            if user.work_schedule_type == 'both_shifts'
+              # Đếm số ca bắt buộc bị thiếu (off) cho both_shifts
+              off_shift_count = 0
+              week_dates.each do |date|
+                date_regs = all_regs.select { |r| r[:work_date] == date }
+                
                 has_morning = date_regs.any? { |r| r[:work_shift_id] == morning_shift_id }
-                off_dates << date unless has_morning
-              when 'afternoon_only'
                 has_afternoon = date_regs.any? { |r| r[:work_shift_id] == afternoon_shift_id }
-                off_dates << date unless has_afternoon
+                
+                # Đếm số ca bị thiếu trong ngày này
+                off_shift_count += 1 unless has_morning
+                off_shift_count += 1 unless has_afternoon
               end
-            end
-            
-            # morning_only/afternoon_only: tối đa X ngày off (configurable)
-            max_off_days = AppSetting.current.max_user_off_days_per_week
-            if off_dates.size > max_off_days
-              errors << {
-                type: 'user_off_limit',
-                message: "Bạn chỉ được off tối đa #{max_off_days} ngày/tuần. Hiện tại bạn đang off #{off_dates.size} ngày.",
-                week_start: week_start.to_s,
-                off_dates: off_dates.map(&:to_s),
-                off_count: off_dates.size
-              }
+              
+              # both_shifts: tối đa X ca off (configurable)
+              max_off_shifts = AppSetting.current.max_user_off_shifts_per_week
+              if off_shift_count > max_off_shifts
+                errors << {
+                  type: 'user_off_limit',
+                  message: "Bạn chỉ được off tối đa #{max_off_shifts} ca/tuần. Hiện tại bạn đang off #{off_shift_count} ca.",
+                  week_start: week_start.to_s,
+                  off_count: off_shift_count
+                }
+              end
+            else
+              # morning_only/afternoon_only: Đếm số ngày mà user thiếu ca bắt buộc (off)
+              off_dates = []
+              week_dates.each do |date|
+                date_regs = all_regs.select { |r| r[:work_date] == date }
+                
+                case user.work_schedule_type
+                when 'morning_only'
+                  has_morning = date_regs.any? { |r| r[:work_shift_id] == morning_shift_id }
+                  off_dates << date unless has_morning
+                when 'afternoon_only'
+                  has_afternoon = date_regs.any? { |r| r[:work_shift_id] == afternoon_shift_id }
+                  off_dates << date unless has_afternoon
+                end
+              end
+              
+              # morning_only/afternoon_only: tối đa X ngày off (configurable)
+              max_off_days = AppSetting.current.max_user_off_days_per_week
+              if off_dates.size > max_off_days
+                errors << {
+                  type: 'user_off_limit',
+                  message: "Bạn chỉ được off tối đa #{max_off_days} ngày/tuần. Hiện tại bạn đang off #{off_dates.size} ngày.",
+                  week_start: week_start.to_s,
+                  off_dates: off_dates.map(&:to_s),
+                  off_count: off_dates.size
+                }
+              end
             end
           end
           
