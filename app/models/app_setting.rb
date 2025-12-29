@@ -10,9 +10,8 @@ class AppSetting < ApplicationRecord
   private
   
   def allowed_ips_is_array
-    if allowed_ips.nil?
-      errors.add(:allowed_ips, "can't be blank")
-    elsif !allowed_ips.is_a?(Array)
+    # Cho phép allowed_ips là nil hoặc array rỗng
+    if allowed_ips.present? && !allowed_ips.is_a?(Array)
       errors.add(:allowed_ips, "must be an array")
     end
   end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_12_26_101438) do
+ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -69,6 +69,25 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_26_101438) do
     t.string "ip_address"
   end
 
+  create_table "forgot_checkin_requests", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.date "request_date", null: false
+    t.string "request_type", null: false
+    t.text "reason", null: false
+    t.string "status", default: "pending"
+    t.bigint "approved_by_id"
+    t.datetime "approved_at"
+    t.text "rejected_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "request_time"
+    t.index ["approved_by_id"], name: "index_forgot_checkin_requests_on_approved_by_id"
+    t.index ["request_date"], name: "index_forgot_checkin_requests_on_request_date"
+    t.index ["status"], name: "index_forgot_checkin_requests_on_status"
+    t.index ["user_id", "request_date", "request_type"], name: "index_forgot_checkin_requests_unique"
+    t.index ["user_id"], name: "index_forgot_checkin_requests_on_user_id"
+  end
+
   create_table "positions", force: :cascade do |t|
     t.string "name", null: false
     t.text "description"
@@ -117,8 +136,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_26_101438) do
     t.string "work_address"
     t.bigint "department_id"
     t.bigint "position_id"
-    t.integer "work_schedule_type", default: 0, null: false
     t.integer "status", default: 0, null: false
+    t.integer "work_schedule_type", default: 0, null: false
     t.index ["branch_id"], name: "index_users_on_branch_id"
     t.index ["department_id"], name: "index_users_on_department_id"
     t.index ["position_id"], name: "index_users_on_position_id"
@@ -170,6 +189,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_26_101438) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "forgot_checkin_requests", "users"
+  add_foreign_key "forgot_checkin_requests", "users", column: "approved_by_id"
   add_foreign_key "positions", "branches"
   add_foreign_key "positions", "departments"
   add_foreign_key "shift_registrations", "users"

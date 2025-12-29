@@ -46,15 +46,27 @@ module Api
       # POST /api/v1/work_sessions
       # Check-in
       def create
-        active_session = WorkSession.where(user_id: params[:work_session][:user_id], end_time: nil).first
+        # Chỉ kiểm tra các session thực sự đang active (không phải forgot_checkout)
+        active_session = WorkSession.where(
+          user_id: params[:work_session][:user_id], 
+          end_time: nil,
+          forgot_checkout: false
+        ).first
         
         if active_session
           return render json: { message: 'Đang có ca làm việc chưa kết thúc' }, status: :bad_request
         end
 
+        # Kiểm tra IP whitelist
+        ip_check_result = check_ip_allowed
+        unless ip_check_result[:allowed]
+          return render json: { message: ip_check_result[:message] }, status: :forbidden
+        end
+
         @session = WorkSession.new(session_params)
         @session.start_time ||= Time.current
         @session.date = @session.start_time.to_date
+        @session.ip_address = request.remote_ip
         
         if @session.save
           render json: @session, status: :created
@@ -70,6 +82,13 @@ module Api
         if @session.end_time.present?
            return render json: { message: 'Ca làm việc này đã kết thúc rồi' }, status: :bad_request
         end
+        
+        # Kiểm tra IP whitelist
+        ip_check_result = check_ip_allowed
+        unless ip_check_result[:allowed]
+          return render json: { message: ip_check_result[:message] }, status: :forbidden
+        end
+        
         params_to_update = {}
 
         params_to_update[:end_time] = Time.current if @session.end_time.nil?
@@ -111,6 +130,24 @@ module Api
 
       def session_params
         params.require(:work_session).permit(:user_id, :start_time, :end_time, :work_summary, :challenges, :suggestions, :notes) 
+      end
+
+      def check_ip_allowed
+        setting = AppSetting.current
+        return { allowed: true } unless setting.require_ip_check
+
+        client_ip = request.remote_ip
+        allowed_ips = setting.allowed_ips || []
+
+        if allowed_ips.empty?
+          return { allowed: false, message: 'Chưa cấu hình địa chỉ IP được phép chấm công' }
+        end
+
+        if allowed_ips.include?(client_ip)
+          { allowed: true }
+        else
+          { allowed: false, message: "Địa chỉ IP #{client_ip} không được phép chấm công. Vui lòng liên hệ quản trị viên." }
+        end
       end
     end
   end

@@ -42,6 +42,53 @@ class WorkSession < ApplicationRecord
       session.check_forgot_checkout!(now)
     end
   end
+
+  # Class method để tự động fix các ca quên checkout khi vào ngày mới
+  # Được gọi khi user login hoặc khi vào ngày mới
+  def self.auto_fix_forgot_checkouts_for_new_day!
+    timezone = 'Bangkok'
+    now = Time.current.in_time_zone(timezone)
+    today = now.to_date
+    
+    fixed_count = 0
+    
+    # 1. Fix các ca có end_time nhưng thời gian quá dài (quá 02:00 hôm sau)
+    where.not(end_time: nil).where.not(start_time: nil).find_each do |session|
+      start_time_tz = session.start_time.in_time_zone(timezone)
+      end_time_tz = session.end_time.in_time_zone(timezone)
+      session_date = start_time_tz.to_date
+      
+      # Tính thời gian 02:00 hôm sau
+      next_day_2am = (session_date + 1.day).in_time_zone(timezone).change(hour: 2, min: 0)
+      
+      # Nếu end_time quá 02:00 hôm sau thì coi như quên checkout
+      if end_time_tz > next_day_2am
+        # Set end_time = nil (coi như trống ca, không tính vào ca hoàn thành)
+        session.update!(
+          end_time: nil,
+          duration_minutes: nil,
+          forgot_checkout: true,
+          is_early_checkout: false,
+          minutes_before_end: 0
+        )
+        fixed_count += 1
+      end
+    end
+    
+    # 2. Fix các ca chưa checkout và đã qua ngày mới (02:00 hôm sau)
+    where(end_time: nil, forgot_checkout: false).find_each do |session|
+      session_date = session.start_time.in_time_zone(timezone).to_date
+      next_day_2am = (session_date + 1.day).in_time_zone(timezone).change(hour: 2, min: 0)
+      
+      # Nếu đã qua 02:00 hôm sau thì mark forgot_checkout (end_time vẫn là nil)
+      if now >= next_day_2am
+        session.mark_forgot_checkout!
+        fixed_count += 1
+      end
+    end
+    
+    fixed_count
+  end
   
   def check_forgot_checkout!(current_time = Time.current.in_time_zone('Bangkok'))
     return if end_time.present? || forgot_checkout?
@@ -68,6 +115,8 @@ class WorkSession < ApplicationRecord
   end
   
   def mark_forgot_checkout!
+    # Nếu quên checkout thì coi như trống ca ngày hôm đó (end_time = nil)
+    # Không tính vào ca hoàn thành trong báo cáo
     update!(
       forgot_checkout: true,
       end_time: nil,
@@ -172,10 +221,13 @@ class WorkSession < ApplicationRecord
     # Tính duration
     if start_time.present? && end_time.present?
       self.duration_minutes = ((end_time - start_time) / 60).to_i
+    else
+      # Nếu end_time là nil, set duration_minutes = nil
+      self.duration_minutes = nil
     end
     
-    # Nếu không có shift, không kiểm tra early checkout
-    return if work_shift.blank?
+    # Nếu không có shift hoặc không có end_time, không kiểm tra early checkout
+    return if work_shift.blank? || end_time.blank?
     
     # Sử dụng end_time của session, không phải Time.current
     checkout_time = end_time.in_time_zone('Bangkok')
