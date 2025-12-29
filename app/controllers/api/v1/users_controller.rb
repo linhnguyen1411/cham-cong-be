@@ -4,8 +4,8 @@ class Api::V1::UsersController < ApplicationController
   before_action :set_user, only: [:show, :update, :update_password, :update_avatar, :deactivate]
 
   def index
-    # Show all staff (active and deactive) - frontend will filter
-  @users = User.staff.order(created_at: :desc)
+    # Show all users (admin and staff, active and deactive) - frontend will filter
+    @users = User.all.order(created_at: :desc)
     render json: @users, status: :ok
   end
 
