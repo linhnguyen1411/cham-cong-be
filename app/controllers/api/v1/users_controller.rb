@@ -5,7 +5,7 @@ class Api::V1::UsersController < ApplicationController
 
   def index
     # Show all staff (active and deactive) - frontend will filter
-    @users = User.staff.order(created_at: :desc)
+  @users = User.staff.order(created_at: :desc)
     render json: @users, status: :ok
   end
 

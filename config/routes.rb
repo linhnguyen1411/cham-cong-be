@@ -36,10 +36,12 @@ Rails.application.routes.draw do
           get :pending
           post :bulk_create
           post :bulk_approve
+          post :admin_bulk_update
         end
         member do
           post :approve
           post :reject
+          post :admin_update
         end
       end
     end

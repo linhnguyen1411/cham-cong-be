@@ -2,7 +2,7 @@
 module Api
   module V1
     class ShiftRegistrationsController < ApplicationController
-      before_action :set_registration, only: [:show, :update, :destroy, :approve, :reject]
+      before_action :set_registration, only: [:show, :update, :destroy, :approve, :reject, :admin_update]
       
       # GET /api/v1/shift_registrations
       def index
@@ -204,8 +204,13 @@ module Api
       
       # PATCH /api/v1/shift_registrations/:id
       def update
-        if @registration.pending?
-          if @registration.update(registration_params.except(:status))
+        # Cho phép user sửa đăng ký pending của chính họ
+        # Hoặc admin có thể sửa bất kỳ đăng ký nào
+        if @registration.pending? || current_user&.admin?
+          # Admin có thể sửa cả status, user khác chỉ sửa được thông tin đăng ký
+          update_params = current_user&.admin? ? registration_params : registration_params.except(:status, :user_id)
+          
+          if @registration.update(update_params)
             render json: @registration
           else
             render json: { errors: @registration.errors.full_messages }, status: :unprocessable_entity
@@ -217,12 +222,60 @@ module Api
       
       # DELETE /api/v1/shift_registrations/:id
       def destroy
-        if @registration.pending?
+        # Cho phép user xóa đăng ký pending của chính họ
+        # Hoặc admin có thể xóa bất kỳ đăng ký nào
+        if @registration.pending? || current_user&.admin?
           @registration.destroy
           head :no_content
         else
           render json: { error: 'Không thể xóa đăng ký đã được duyệt/từ chối' }, status: :unprocessable_entity
         end
+      end
+      
+      # POST /api/v1/shift_registrations/:id/admin_update
+      # Admin có thể sửa đăng ký của nhân viên (kể cả đã approved)
+      def admin_update
+        unless current_user&.admin?
+          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
+        end
+        
+        if @registration.update(admin_registration_params)
+          render json: @registration
+        else
+          render json: { errors: @registration.errors.full_messages }, status: :unprocessable_entity
+        end
+      end
+      
+      # POST /api/v1/shift_registrations/admin_bulk_update
+      # Admin có thể sửa nhiều đăng ký cùng lúc
+      def admin_bulk_update
+        unless current_user&.admin?
+          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
+        end
+        
+        updates = params[:updates] || []
+        results = { updated: [], errors: [] }
+        
+        updates.each do |update_data|
+          registration = ShiftRegistration.find_by(id: update_data[:id])
+          unless registration
+            results[:errors] << { id: update_data[:id], error: 'Không tìm thấy đăng ký' }
+            next
+          end
+          
+          if registration.update(
+            work_shift_id: update_data[:work_shift_id] || registration.work_shift_id,
+            work_date: update_data[:work_date] || registration.work_date,
+            note: update_data[:note] || registration.note,
+            admin_note: update_data[:admin_note] || registration.admin_note
+          )
+            results[:updated] << registration.id
+          else
+            results[:errors] << { id: registration.id, errors: registration.errors.full_messages }
+          end
+        end
+        
+        render json: results
       end
       
       # POST /api/v1/shift_registrations/:id/approve
@@ -281,7 +334,26 @@ module Api
       end
       
       def registration_params
-        params.require(:shift_registration).permit(:user_id, :work_shift_id, :work_date, :note)
+        params.require(:shift_registration).permit(:user_id, :work_shift_id, :work_date, :note, :status)
+      end
+      
+      def admin_registration_params
+        params.require(:shift_registration).permit(:user_id, :work_shift_id, :work_date, :note, :admin_note, :status)
+      end
+      
+      def current_user
+        @current_user ||= begin
+          header = request.headers['Authorization']
+          return nil unless header
+          
+          token = header.split(' ').last
+          decoded = JsonWebToken.decode(token)
+          return nil unless decoded
+          
+          User.find_by(id: decoded[:user_id])
+        rescue
+          nil
+        end
       end
       
       def can_register_next_week?
@@ -326,14 +398,15 @@ module Api
             end
           end.flatten.compact
           
-          # Get existing registrations for this week (excluding current pending ones)
-          existing_regs = ShiftRegistration
-            .where(user_id: user.id, week_start: week_start, status: [:pending, :approved])
+          # Get existing APPROVED registrations for this week (không lấy pending vì sẽ bị xóa)
+          # Pending sẽ bị xóa trước khi tạo mới, nên không cần validate với pending cũ
+          existing_approved_regs = ShiftRegistration
+            .where(user_id: user.id, week_start: week_start, status: :approved)
             .pluck(:work_date, :work_shift_id)
             .map { |date, shift_id| { work_date: date, work_shift_id: shift_id } }
           
-          # Combine existing and new registrations
-          all_regs = (existing_regs + week_regs).uniq { |r| [r[:work_date], r[:work_shift_id]] }
+          # Combine existing APPROVED and new registrations (pending sẽ bị xóa)
+          all_regs = (existing_approved_regs + week_regs).uniq { |r| [r[:work_date], r[:work_shift_id]] }
           
           # Chỉ đếm các ca bắt buộc (không tính tăng ca)
           # Tăng ca: morning_only đăng ký afternoon hoặc afternoon_only đăng ký morning
@@ -446,18 +519,20 @@ module Api
                 total_same_position = same_position_users.size
                 
                 # - Đếm số người CÙNG VỊ TRÍ, BẮT BUỘC làm ca sáng ĐÃ ĐĂNG KÝ ca sáng (không tính user hiện tại)
+                # CHỈ ĐẾM APPROVED (pending sẽ bị xóa khi submit)
                 registered_morning_user_ids = ShiftRegistration
-                  .where(work_date: date, work_shift_id: morning_shift_id, status: [:pending, :approved])
+                  .where(work_date: date, work_shift_id: morning_shift_id, status: :approved)
                   .where.not(user_id: user.id)
                   .where(user_id: same_position_users)  # Chỉ check những người cùng position
                   .pluck(:user_id)
                 
+                # Cộng thêm các ca mới đang submit (từ week_regs) cho cùng ngày/ca
                 required_registered_count = registered_morning_user_ids.size
                 
                 # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
-                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (pending hoặc approved)
+                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (CHỈ APPROVED, pending sẽ bị xóa)
                 users_with_registrations = ShiftRegistration
-                  .where(week_start: week_start, status: [:pending, :approved])
+                  .where(week_start: week_start, status: :approved)
                   .where(user_id: same_position_users)
                   .where.not(user_id: user.id)
                   .distinct
@@ -515,8 +590,9 @@ module Api
                 same_position_users = same_position_users_query.pluck(:id)
                 
                 # - Đếm số người CÙNG VỊ TRÍ, BẮT BUỘC làm ca chiều ĐÃ ĐĂNG KÝ ca chiều (không tính user hiện tại)
+                # CHỈ ĐẾM APPROVED (pending sẽ bị xóa khi submit)
                 registered_afternoon_user_ids = ShiftRegistration
-                  .where(work_date: date, work_shift_id: afternoon_shift_id, status: [:pending, :approved])
+                  .where(work_date: date, work_shift_id: afternoon_shift_id, status: :approved)
                   .where.not(user_id: user.id)
                   .where(user_id: same_position_users)  # Chỉ check những người cùng position
                   .pluck(:user_id)
@@ -524,9 +600,9 @@ module Api
                 required_registered_count = registered_afternoon_user_ids.size
                 
                 # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
-                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (pending hoặc approved)
+                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (CHỈ APPROVED, pending sẽ bị xóa)
                 users_with_registrations = ShiftRegistration
-                  .where(week_start: week_start, status: [:pending, :approved])
+                  .where(week_start: week_start, status: :approved)
                   .where(user_id: same_position_users)
                   .where.not(user_id: user.id)
                   .distinct

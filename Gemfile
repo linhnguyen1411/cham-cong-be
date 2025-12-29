@@ -47,3 +47,6 @@ group :development do
   # gem "spring"
 end
 
+# Cron job management
+gem 'whenever', require: false
+
