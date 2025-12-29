@@ -16,7 +16,38 @@ class Api::V1::UsersController < ApplicationController
   def create
     @user = User.new(user_params)
     if @user.save
+      # Tự động tạo lịch làm việc cho tuần hiện tại nếu là nhân viên
+      if @user.staff? && @user.active?
+        create_default_shift_registrations_for_user(@user)
+      end
       render json: @user, status: :created
+    else
+      render json: @user.errors, status: :unprocessable_entity
+    end
+  end
+
+  # GET /api/v1/users/:id/avatar - Serve avatar directly (public action, no auth required)
+  def avatar
+    user = User.find_by(id: params[:id])
+    
+    if user&.avatar&.attached?
+      send_data user.avatar.download, 
+                type: user.avatar.content_type, 
+                disposition: 'inline',
+                filename: user.avatar.filename.to_s
+    else
+      head :not_found
+    end
+  end
+
+  # PATCH /api/v1/users/:id/deactivate - Deactivate user (set status to deactive)
+  def deactivate
+    unless @current_user.admin?
+      return render json: { error: 'Chỉ admin mới có quyền thực hiện thao tác này' }, status: :forbidden
+    end
+
+    if @user.update(status: :deactive)
+      render json: { message: 'Đã đánh dấu nhân viên nghỉ việc', user: @user }, status: :ok
     else
       render json: @user.errors, status: :unprocessable_entity
     end
@@ -84,41 +115,68 @@ class Api::V1::UsersController < ApplicationController
     end
   end
 
-  # GET /api/v1/users/:id/avatar - Serve avatar directly (public action, no auth required)
-  def avatar
-    user = User.find_by(id: params[:id])
-    
-    if user&.avatar&.attached?
-      send_data user.avatar.download, 
-                type: user.avatar.content_type, 
-                disposition: 'inline',
-                filename: user.avatar.filename.to_s
-    else
-      head :not_found
-    end
-  end
-
-  # PATCH /api/v1/users/:id/deactivate - Deactivate user (set status to deactive)
-  def deactivate
-    unless @current_user.admin?
-      return render json: { error: 'Chỉ admin mới có quyền thực hiện thao tác này' }, status: :forbidden
-    end
-
-    if @user.update(status: :deactive)
-      render json: { message: 'Đã đánh dấu nhân viên nghỉ việc', user: @user }, status: :ok
-    else
-      render json: @user.errors, status: :unprocessable_entity
-    end
-  end
-
   private
+
+  def create_default_shift_registrations_for_user(user)
+    timezone = 'Bangkok'
+    today = Date.current
+    week_start = today.beginning_of_week(:monday)
+    
+    # Tìm ca sáng và ca chiều
+    all_shifts = WorkShift.all.index_by(&:id)
+    morning_shift = all_shifts.values.find { |s| s.name.downcase.include?('sáng') || (s.start_time.present? && s.start_time < '12:00') }
+    afternoon_shift = all_shifts.values.find { |s| s.name.downcase.include?('chiều') || (s.start_time.present? && s.start_time >= '12:00' && s.start_time < '18:00') }
+    
+    return unless morning_shift || afternoon_shift
+    
+    # Tạo 7 ngày trong tuần
+    week_dates = (week_start..(week_start + 6.days)).to_a
+    shifts_to_register = []
+    
+    case user.work_schedule_type
+    when 'both_shifts'
+      week_dates.each do |date|
+        shifts_to_register << { date: date, shift: morning_shift } if morning_shift
+        shifts_to_register << { date: date, shift: afternoon_shift } if afternoon_shift
+      end
+    when 'morning_only'
+      week_dates.each do |date|
+        shifts_to_register << { date: date, shift: morning_shift } if morning_shift
+      end
+    when 'afternoon_only'
+      week_dates.each do |date|
+        shifts_to_register << { date: date, shift: afternoon_shift } if afternoon_shift
+      end
+    else
+      # Default: cả ca sáng và ca chiều
+      week_dates.each do |date|
+        shifts_to_register << { date: date, shift: morning_shift } if morning_shift
+        shifts_to_register << { date: date, shift: afternoon_shift } if afternoon_shift
+      end
+    end
+    
+    # Tạo đăng ký với status approved (tự động duyệt)
+    shifts_to_register.each do |item|
+      ShiftRegistration.create!(
+        user_id: user.id,
+        work_shift_id: item[:shift].id,
+        work_date: item[:date],
+        week_start: week_start,
+        status: :approved,
+        note: 'Tự động tạo khi tạo nhân viên mới'
+      )
+    end
+  rescue => e
+    Rails.logger.error "Error creating default shift registrations for user #{user.id}: #{e.message}"
+    # Không throw error để không ảnh hưởng đến việc tạo user
+  end
 
   def set_user
     @user = User.find(params[:id])
   end
 
   def user_params
-    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :branch_id, :department_id, :position_id, :work_address)
+    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :branch_id, :department_id, :position_id, :work_address, :work_schedule_type)
   end
 
   def profile_params
