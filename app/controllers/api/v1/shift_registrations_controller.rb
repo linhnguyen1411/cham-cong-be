@@ -100,12 +100,12 @@ module Api
         
         return render json: { error: 'User not found' }, status: :not_found unless user
         
-        # Kiểm tra thời gian đăng ký: chỉ cho phép vào thứ 6
+        # Kiểm tra thời gian đăng ký: chỉ cho phép vào thứ 6 và thứ 7
         unless can_register_next_week?
           today = Date.current
           weekday_name = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][today.wday]
           return render json: { 
-            error: "Chỉ có thể đăng ký ca vào thứ 6. Hôm nay là #{weekday_name}.",
+            error: "Chỉ có thể đăng ký ca vào thứ 6 và thứ 7. Hôm nay là #{weekday_name}.",
             error_count: 1,
             success_count: 0
           }, status: :forbidden
@@ -368,9 +368,9 @@ module Api
       end
       
       def can_register_next_week?
-        # Chỉ cho phép đăng ký vào thứ 6 (wday = 5)
+        # Chỉ cho phép đăng ký vào thứ 6 (wday = 5) và thứ 7 (wday = 6)
         today = Date.current
-        today.wday == 5 # Friday (5) only
+        today.wday == 5 || today.wday == 6 # Friday (5) or Saturday (6)
       end
       
       def validate_bulk_registration(user, registrations_data)
