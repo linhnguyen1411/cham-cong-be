@@ -47,6 +47,8 @@ Rails.application.routes.draw do
           post :bulk_create
           post :bulk_approve
           post :admin_bulk_update
+          post :admin_quick_add
+          post :admin_quick_delete
         end
         member do
           post :approve

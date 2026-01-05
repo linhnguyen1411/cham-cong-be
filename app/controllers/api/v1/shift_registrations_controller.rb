@@ -257,6 +257,82 @@ module Api
         end
       end
       
+      # POST /api/v1/shift_registrations/admin_quick_add
+      # Admin có thể thêm nhân viên vào ca nhanh (bỏ qua validate)
+      def admin_quick_add
+        unless current_user&.admin?
+          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
+        end
+        
+        user_id = params[:user_id]
+        work_shift_id = params[:work_shift_id]
+        work_date = params[:work_date]
+        
+        unless user_id && work_shift_id && work_date
+          return render json: { error: 'Thiếu tham số' }, status: :bad_request
+        end
+        
+        # Parse date
+        work_date_parsed = work_date.is_a?(String) ? Date.parse(work_date) : work_date
+        week_start = work_date_parsed.beginning_of_week(:monday)
+        
+        # Xóa đăng ký cũ nếu có (cho cùng user, date, shift)
+        ShiftRegistration.where(
+          user_id: user_id,
+          work_date: work_date_parsed,
+          work_shift_id: work_shift_id
+        ).destroy_all
+        
+        # Tạo đăng ký mới với status approved (bỏ qua validate bằng cách dùng update_column hoặc save(validate: false))
+        registration = ShiftRegistration.new(
+          user_id: user_id,
+          work_shift_id: work_shift_id,
+          work_date: work_date_parsed,
+          week_start: week_start,
+          status: :approved,
+          approved_by: current_user,
+          approved_at: Time.current,
+          note: 'Admin thêm nhanh'
+        )
+        
+        # Bỏ qua validate
+        registration.save(validate: false)
+        
+        if registration.persisted?
+          render json: registration, status: :created
+        else
+          render json: { errors: registration.errors.full_messages }, status: :unprocessable_entity
+        end
+      end
+      
+      # POST /api/v1/shift_registrations/admin_quick_delete
+      # Admin có thể xóa nhân viên ra khỏi ca nhanh
+      def admin_quick_delete
+        unless current_user&.admin?
+          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
+        end
+        
+        user_id = params[:user_id]
+        work_shift_id = params[:work_shift_id]
+        work_date = params[:work_date]
+        
+        unless user_id && work_shift_id && work_date
+          return render json: { error: 'Thiếu tham số' }, status: :bad_request
+        end
+        
+        # Parse date
+        work_date_parsed = work_date.is_a?(String) ? Date.parse(work_date) : work_date
+        
+        # Xóa đăng ký
+        deleted_count = ShiftRegistration.where(
+          user_id: user_id,
+          work_date: work_date_parsed,
+          work_shift_id: work_shift_id
+        ).destroy_all.count
+        
+        render json: { message: 'Đã xóa', deleted_count: deleted_count }, status: :ok
+      end
+      
       # POST /api/v1/shift_registrations/admin_bulk_update
       # Admin có thể sửa nhiều đăng ký cùng lúc
       def admin_bulk_update
