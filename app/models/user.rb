@@ -72,6 +72,8 @@ class User < ApplicationRecord
     json['department_name'] = department&.name
     json['position_name'] = position&.name
     json['position_level'] = position&.level
+    json['role_name'] = role&.name
+    json['role_id'] = role_id
     json
   end
 
