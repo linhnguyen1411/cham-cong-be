@@ -10,6 +10,12 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       post '/auth/login', to: 'auth#login'
+      resources :roles, only: [:index, :show, :create, :update, :destroy] do
+        member do
+          post :assign_permissions
+        end
+      end
+      resources :permissions, only: [:index, :show]
       resource :settings, only: [:show, :update]
       resources :forgot_checkin_requests, only: [:index, :show, :create] do
         collection do

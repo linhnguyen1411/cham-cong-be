@@ -14,10 +14,21 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def create
+    unless check_user_permission('create')
+      return
+    end
+    
+    # Check if user can create for this department
+    department_id = user_params[:department_id]
+    unless @current_user&.can_create_user_for_department?(department_id)
+      return render json: { error: 'Bạn chỉ có thể tạo user cho bộ phận của mình' }, status: :forbidden
+    end
+    
     @user = User.new(user_params)
     if @user.save
       # Tự động tạo lịch làm việc cho tuần hiện tại nếu là nhân viên
-      if @user.staff? && @user.active?
+      staff_role = Role.find_by(name: 'staff')
+      if @user.role_id == staff_role&.id && @user.active?
         create_default_shift_registrations_for_user(@user)
       end
       render json: @user, status: :created
@@ -176,7 +187,7 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def user_params
-    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :branch_id, :department_id, :position_id, :work_address, :work_schedule_type)
+    params.require(:user).permit(:username, :password, :password_confirmation, :full_name, :role, :role_id, :branch_id, :department_id, :position_id, :work_address, :work_schedule_type)
   end
 
   def profile_params
@@ -193,8 +204,17 @@ class Api::V1::UsersController < ApplicationController
   end
 
   def check_admin_permission
-    unless @current_user.admin?
+    unless @current_user&.has_permission?('users', 'create') || @current_user&.super_admin?
       render json: { errors: 'Only admins can perform this action' }, status: :forbidden
     end
+  end
+  
+  def check_user_permission(action)
+    resource = 'users'
+    unless @current_user&.has_permission?(resource, action) || @current_user&.super_admin?
+      render json: { error: 'Bạn không có quyền thực hiện thao tác này' }, status: :forbidden
+      return false
+    end
+    true
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_01_09_082931) do
+ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -94,6 +94,18 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_082931) do
     t.index ["user_id"], name: "index_forgot_checkin_requests_on_user_id"
   end
 
+  create_table "permissions", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "resource", null: false
+    t.string "action", null: false
+    t.text "description"
+    t.datetime "deleted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["deleted_at"], name: "index_permissions_on_deleted_at"
+    t.index ["resource", "action"], name: "index_permissions_on_resource_and_action", unique: true
+  end
+
   create_table "positions", force: :cascade do |t|
     t.string "name", null: false
     t.text "description"
@@ -107,6 +119,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_082931) do
     t.index ["deleted_at"], name: "index_positions_on_deleted_at"
     t.index ["department_id"], name: "index_positions_on_department_id"
     t.index ["name", "branch_id", "department_id"], name: "idx_positions_unique", unique: true
+  end
+
+  create_table "role_permissions", force: :cascade do |t|
+    t.bigint "role_id", null: false
+    t.bigint "permission_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["permission_id"], name: "index_role_permissions_on_permission_id"
+    t.index ["role_id", "permission_id"], name: "index_role_permissions_on_role_id_and_permission_id", unique: true
+    t.index ["role_id"], name: "index_role_permissions_on_role_id"
+  end
+
+  create_table "roles", force: :cascade do |t|
+    t.string "name", null: false
+    t.text "description"
+    t.boolean "is_system", default: false, null: false
+    t.datetime "deleted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["deleted_at"], name: "index_roles_on_deleted_at"
+    t.index ["name"], name: "index_roles_on_name", unique: true
   end
 
   create_table "shift_registrations", force: :cascade do |t|
@@ -149,10 +182,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_082931) do
     t.integer "status", default: 0, null: false
     t.integer "work_schedule_type", default: 0, null: false
     t.datetime "deleted_at"
+    t.bigint "role_id"
     t.index ["branch_id"], name: "index_users_on_branch_id"
     t.index ["deleted_at"], name: "index_users_on_deleted_at"
     t.index ["department_id"], name: "index_users_on_department_id"
     t.index ["position_id"], name: "index_users_on_position_id"
+    t.index ["role_id"], name: "index_users_on_role_id"
     t.index ["status"], name: "index_users_on_status"
     t.index ["username"], name: "index_users_on_username", unique: true
   end
@@ -209,12 +244,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_082931) do
   add_foreign_key "forgot_checkin_requests", "users", column: "approved_by_id"
   add_foreign_key "positions", "branches"
   add_foreign_key "positions", "departments"
+  add_foreign_key "role_permissions", "permissions"
+  add_foreign_key "role_permissions", "roles"
   add_foreign_key "shift_registrations", "users"
   add_foreign_key "shift_registrations", "users", column: "approved_by_id"
   add_foreign_key "shift_registrations", "work_shifts"
   add_foreign_key "users", "branches"
   add_foreign_key "users", "departments"
   add_foreign_key "users", "positions"
+  add_foreign_key "users", "roles"
   add_foreign_key "work_sessions", "shift_registrations"
   add_foreign_key "work_sessions", "users"
   add_foreign_key "work_sessions", "work_shifts"
