@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
+ActiveRecord::Schema[7.1].define(version: 2026_01_09_082931) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -59,6 +59,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.text "description"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_branches_on_deleted_at"
   end
 
   create_table "departments", force: :cascade do |t|
@@ -67,6 +69,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "ip_address"
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_departments_on_deleted_at"
   end
 
   create_table "forgot_checkin_requests", force: :cascade do |t|
@@ -81,7 +85,9 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "request_time"
+    t.datetime "deleted_at"
     t.index ["approved_by_id"], name: "index_forgot_checkin_requests_on_approved_by_id"
+    t.index ["deleted_at"], name: "index_forgot_checkin_requests_on_deleted_at"
     t.index ["request_date"], name: "index_forgot_checkin_requests_on_request_date"
     t.index ["status"], name: "index_forgot_checkin_requests_on_status"
     t.index ["user_id", "request_date", "request_type"], name: "index_forgot_checkin_requests_unique"
@@ -96,7 +102,9 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.integer "level", default: 0
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "deleted_at"
     t.index ["branch_id"], name: "index_positions_on_branch_id"
+    t.index ["deleted_at"], name: "index_positions_on_deleted_at"
     t.index ["department_id"], name: "index_positions_on_department_id"
     t.index ["name", "branch_id", "department_id"], name: "idx_positions_unique", unique: true
   end
@@ -113,7 +121,9 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.datetime "approved_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "deleted_at"
     t.index ["approved_by_id"], name: "index_shift_registrations_on_approved_by_id"
+    t.index ["deleted_at"], name: "index_shift_registrations_on_deleted_at"
     t.index ["status"], name: "index_shift_registrations_on_status"
     t.index ["user_id", "work_date", "work_shift_id"], name: "idx_shift_reg_user_date_shift", unique: true
     t.index ["user_id"], name: "index_shift_registrations_on_user_id"
@@ -138,7 +148,9 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.bigint "position_id"
     t.integer "status", default: 0, null: false
     t.integer "work_schedule_type", default: 0, null: false
+    t.datetime "deleted_at"
     t.index ["branch_id"], name: "index_users_on_branch_id"
+    t.index ["deleted_at"], name: "index_users_on_deleted_at"
     t.index ["department_id"], name: "index_users_on_department_id"
     t.index ["position_id"], name: "index_users_on_position_id"
     t.index ["status"], name: "index_users_on_status"
@@ -170,6 +182,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.text "notes"
     t.boolean "forgot_checkout", default: false
     t.bigint "shift_registration_id"
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_work_sessions_on_deleted_at"
     t.index ["shift_registration_id"], name: "index_work_sessions_on_shift_registration_id"
     t.index ["user_id"], name: "index_work_sessions_on_user_id"
     t.index ["work_shift_id"], name: "index_work_sessions_on_work_shift_id"
@@ -183,6 +197,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_12_29_083743) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "department_id"
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_work_shifts_on_deleted_at"
     t.index ["department_id"], name: "index_work_shifts_on_department_id"
     t.index ["name"], name: "index_work_shifts_on_name", unique: true
   end

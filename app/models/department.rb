@@ -1,4 +1,6 @@
 class Department < ApplicationRecord
+  include SoftDeletable
+  
   has_many :users, dependent: :nullify
   has_many :work_shifts, dependent: :destroy
 

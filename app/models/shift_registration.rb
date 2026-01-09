@@ -1,5 +1,7 @@
 # app/models/shift_registration.rb
 class ShiftRegistration < ApplicationRecord
+  include SoftDeletable
+  
   belongs_to :user
   belongs_to :work_shift
   belongs_to :approved_by, class_name: 'User', optional: true

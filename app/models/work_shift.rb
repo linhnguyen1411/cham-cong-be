@@ -1,5 +1,7 @@
 # app/models/work_shift.rb
 class WorkShift < ApplicationRecord
+  include SoftDeletable
+  
   belongs_to :department, optional: true
   
   validates :name, presence: true

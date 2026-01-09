@@ -1,4 +1,6 @@
 class ForgotCheckinRequest < ApplicationRecord
+  include SoftDeletable
+  
   belongs_to :user
   belongs_to :approved_by, class_name: 'User', optional: true
 

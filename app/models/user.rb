@@ -1,4 +1,6 @@
 class User < ApplicationRecord
+  include SoftDeletable
+  
   has_secure_password
   has_one_attached :avatar
   belongs_to :branch, optional: true

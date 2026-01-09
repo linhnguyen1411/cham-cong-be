@@ -1,5 +1,7 @@
 # app/models/position.rb
 class Position < ApplicationRecord
+  include SoftDeletable
+  
   belongs_to :branch, optional: true
   belongs_to :department, optional: true
   has_many :users, dependent: :nullify

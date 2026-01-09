@@ -1,4 +1,6 @@
 class WorkSession < ApplicationRecord
+  include SoftDeletable
+  
   belongs_to :user
   belongs_to :work_shift, optional: true
   belongs_to :shift_registration, optional: true
