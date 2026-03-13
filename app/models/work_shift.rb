@@ -18,7 +18,23 @@ class WorkShift < ApplicationRecord
   scope :by_department, ->(dept_id) { where(department_id: dept_id) }
   scope :by_position, ->(position_id) { where(position_id: position_id) }
   scope :general, -> { where(department_id: nil, position_id: nil) }
-  
+
+  # Luôn trả về "HH:MM" theo múi giờ VN cho API (tránh timezone sai)
+  def self.format_time_for_api(val)
+    return nil if val.blank?
+    str = val.to_s.strip
+    if str.length > 8 && (str.include?('T') || (str.include?('-') && str.include?(':')))
+      begin
+        t = Time.zone.parse(str) || Time.parse(str)
+        return t.in_time_zone('Asia/Ho_Chi_Minh').strftime('%H:%M')
+      rescue
+        # fall through
+      end
+    end
+    match = str.match(/\A(\d{1,2}):(\d{2})/)
+    match ? "#{match[1].rjust(2, '0')}:#{match[2]}" : str
+  end
+
   private
 
   # Chuẩn hóa start_time / end_time về "HH:MM"

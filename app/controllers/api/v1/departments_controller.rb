@@ -43,7 +43,7 @@ module Api
           branch_id: @department.branch_id,
           branch_name: @department.branch&.name,
           work_shifts: @department.work_shifts.map { |s| 
-            { id: s.id, name: s.name, start_time: s.start_time, end_time: s.end_time, late_threshold: s.late_threshold }
+            { id: s.id, name: s.name, start_time: WorkShift.format_time_for_api(s.start_time), end_time: WorkShift.format_time_for_api(s.end_time), late_threshold: s.late_threshold }
           }
         ), status: :ok
       end

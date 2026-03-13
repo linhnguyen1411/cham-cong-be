@@ -39,6 +39,8 @@ module Api
         
         render json: @work_shifts.map { |s|
           s.as_json.merge(
+            'start_time' => WorkShift.format_time_for_api(s.start_time),
+            'end_time' => WorkShift.format_time_for_api(s.end_time),
             department_name: s.department&.name,
             position_name: s.position&.name,
             position_id: s.position_id
@@ -48,6 +50,8 @@ module Api
       
       def show
         render json: @work_shift.as_json.merge(
+          'start_time' => WorkShift.format_time_for_api(@work_shift.start_time),
+          'end_time' => WorkShift.format_time_for_api(@work_shift.end_time),
           department_name: @work_shift.department&.name,
           position_name: @work_shift.position&.name,
           position_id: @work_shift.position_id
@@ -89,6 +93,8 @@ module Api
         
         if @work_shift.save
           render json: @work_shift.as_json.merge(
+            'start_time' => WorkShift.format_time_for_api(@work_shift.start_time),
+            'end_time' => WorkShift.format_time_for_api(@work_shift.end_time),
             department_name: @work_shift.department&.name,
             position_name: @work_shift.position&.name,
             position_id: @work_shift.position_id
@@ -108,6 +114,8 @@ module Api
         
         if @work_shift.update(work_shift_params)
           render json: @work_shift.as_json.merge(
+            'start_time' => WorkShift.format_time_for_api(@work_shift.start_time),
+            'end_time' => WorkShift.format_time_for_api(@work_shift.end_time),
             department_name: @work_shift.department&.name,
             position_name: @work_shift.position&.name,
             position_id: @work_shift.position_id
