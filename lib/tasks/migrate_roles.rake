@@ -27,18 +27,21 @@ namespace :roles do
   end
   
   desc "Create super admin user"
-  task create_super_admin: :environment do
+  task :create_super_admin, [:username, :password] => :environment do |t, args|
     super_admin_role = Role.find_by(name: 'super_admin')
     unless super_admin_role
       puts "❌ Super admin role not found. Please run: rails db:seed"
       exit 1
     end
     
-    print "Username: "
-    username = STDIN.gets.chomp
-    print "Password: "
-    password = STDIN.noecho(&:gets).chomp
-    puts
+    username = args[:username] || ENV['USERNAME']
+    password = args[:password] || ENV['PASSWORD']
+    
+    if username.blank? || password.blank?
+      puts "Usage: rails roles:create_super_admin[username,password]"
+      puts "   or: USERNAME=admin PASSWORD=password123 rails roles:create_super_admin"
+      exit 1
+    end
     
     user = User.find_or_initialize_by(username: username)
     user.assign_attributes(

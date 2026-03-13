@@ -39,8 +39,8 @@ class Api::V1::SettingsController < ApplicationController
   end
   
   def check_admin_permission
-    unless @current_user&.admin?
-      render json: { error: 'Chỉ admin mới có quyền thực hiện thao tác này' }, status: :forbidden
+    unless require_admin!
+      return
     end
   end
 end

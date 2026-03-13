@@ -6,9 +6,15 @@ module Api
 
       # GET /api/v1/forgot_checkin_requests
       def index
-        if @current_user.admin?
+        if @current_user&.is_admin?
+          # Admin xem tất cả
           @requests = ForgotCheckinRequest.all.order(created_at: :desc)
+        elsif @current_user&.position_manager? || @current_user&.department_manager?
+          # Position/Department manager chỉ xem requests của nhân viên trong phạm vi quản lý
+          manageable_ids = @current_user.manageable_user_ids
+          @requests = ForgotCheckinRequest.where(user_id: manageable_ids).order(created_at: :desc)
         else
+          # Staff chỉ xem của mình
           @requests = ForgotCheckinRequest.where(user_id: @current_user.id).order(created_at: :desc)
         end
 
@@ -54,7 +60,7 @@ module Api
 
       # POST /api/v1/forgot_checkin_requests
       def create
-        unless @current_user.admin?
+        unless is_admin?
           # Kiểm tra giới hạn 3 lần/tháng
           current_month_count = ForgotCheckinRequest
             .where(user_id: @current_user.id)
@@ -81,8 +87,10 @@ module Api
 
       # POST /api/v1/forgot_checkin_requests/:id/approve
       def approve
-        unless @current_user.admin?
-          return render json: { error: 'Chỉ admin mới có quyền duyệt' }, status: :forbidden
+        # Kiểm tra quyền: Admin hoặc position/department manager của user trong request
+        # Position manager có quyền duyệt (can_view_user), Department manager có quyền quản lý (can_manage_user)
+        unless @current_user&.is_admin? || @current_user&.can_view_user?(@request.user)
+          return render json: { error: 'Bạn không có quyền duyệt yêu cầu này' }, status: :forbidden
         end
 
         if @request.approve!(@current_user)
@@ -94,8 +102,10 @@ module Api
 
       # POST /api/v1/forgot_checkin_requests/:id/reject
       def reject
-        unless @current_user.admin?
-          return render json: { error: 'Chỉ admin mới có quyền từ chối' }, status: :forbidden
+        # Kiểm tra quyền: Admin hoặc position/department manager của user trong request
+        # Position manager có quyền từ chối (can_view_user), Department manager có quyền quản lý (can_manage_user)
+        unless @current_user&.is_admin? || @current_user&.can_view_user?(@request.user)
+          return render json: { error: 'Bạn không có quyền từ chối yêu cầu này' }, status: :forbidden
         end
 
         rejected_reason = params[:rejected_reason] || 'Không được duyệt'
@@ -132,11 +142,55 @@ module Api
 
       # GET /api/v1/forgot_checkin_requests/pending
       def pending
-        unless @current_user.admin?
-          return render json: { error: 'Chỉ admin mới có quyền xem' }, status: :forbidden
+        if @current_user&.is_admin?
+          # Admin xem tất cả pending
+          @requests = ForgotCheckinRequest.pending.order(created_at: :desc)
+        elsif @current_user&.position_manager? || @current_user&.department_manager?
+          # Position/Department manager chỉ xem pending của nhân viên trong phạm vi quản lý
+          manageable_ids = @current_user.manageable_user_ids
+          @requests = ForgotCheckinRequest.pending
+            .where(user_id: manageable_ids)
+            .order(created_at: :desc)
+        else
+          return render json: { error: 'Bạn không có quyền xem danh sách này' }, status: :forbidden
         end
-
-        @requests = ForgotCheckinRequest.pending.order(created_at: :desc)
+        
+        render json: @requests.map { |r|
+          {
+            id: r.id,
+            user_id: r.user_id,
+            user_name: r.user&.full_name || 'Unknown',
+            request_date: r.request_date,
+            request_type: r.request_type,
+            request_time: r.request_time,
+            reason: r.reason,
+            status: r.status,
+            approved_by_id: r.approved_by_id,
+            approved_by_name: r.approved_by&.full_name,
+            approved_at: r.approved_at,
+            rejected_reason: r.rejected_reason,
+            created_at: r.created_at,
+            updated_at: r.updated_at
+          }
+        }
+      end
+      
+      # GET /api/v1/forgot_checkin_requests/my_team
+      # Position/Department manager xem form xin quên checkin/checkout của nhân viên trong team
+      def my_team
+        # Nếu là admin, xem tất cả
+        if @current_user&.is_admin?
+          manageable_ids = User.pluck(:id)
+        elsif @current_user&.position_manager? || @current_user&.department_manager?
+          # Position/Department manager chỉ xem nhân viên trong phạm vi quản lý
+          manageable_ids = @current_user.manageable_user_ids
+        else
+          # Staff chỉ xem của mình
+          manageable_ids = [@current_user.id].compact
+        end
+        @requests = ForgotCheckinRequest.where(user_id: manageable_ids)
+          .order(created_at: :desc)
+        
         render json: @requests.map { |r|
           {
             id: r.id,

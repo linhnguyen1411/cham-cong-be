@@ -21,6 +21,7 @@ Rails.application.routes.draw do
         collection do
           get :my_requests
           get :pending
+          get :my_team
         end
         member do
           post :approve
@@ -31,25 +32,50 @@ Rails.application.routes.draw do
         collection do
           get :active
           post :process_forgot_checkouts
+          get :my_team
+        end
+        member do
+          post :admin_update
         end
       end
-      resources :users, only: [:index, :show, :create, :update] do
+      resources :users, only: [:index, :show, :create, :update, :destroy] do
+        collection do
+          get :my_team
+        end
         member do
           patch :update_password
           post :update_avatar
           get :avatar
           patch :deactivate
+          patch :reactivate
         end
       end
       resources :work_shifts, only: [:index, :create, :update, :destroy]
-      resources :branches, only: [:index, :show, :create, :update, :destroy]
-      resources :departments, only: [:index, :show, :create, :update, :destroy]
-      resources :positions, only: [:index, :show, :create, :update, :destroy]
+      resources :branches, only: [:index, :show, :create, :update, :destroy] do
+        member do
+          post :assign_manager
+          delete :remove_manager
+        end
+      end
+      resources :departments, only: [:index, :show, :create, :update, :destroy] do
+        member do
+          post :assign_manager
+          delete :remove_manager
+        end
+      end
+      resources :positions, only: [:index, :show, :create, :update, :destroy] do
+        member do
+          post :assign_manager
+          delete :remove_manager
+        end
+      end
       resources :shift_registrations, only: [:index, :show, :create, :update, :destroy] do
         collection do
           get :my_registrations
           get :available_shifts
+          get :deletion_history
           get :pending
+          get :my_team
           post :bulk_create
           post :bulk_approve
           post :admin_bulk_update

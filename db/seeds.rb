@@ -1,16 +1,24 @@
 # Seed Roles and Permissions
+# Role Hierarchy:
+# Cap 1: Super Admin  - Toan quyen he thong (Global)
+# Cap 2: Branch Admin - Quan ly trong Chi nhanh duoc chi dinh
+# Cap 3: Department Head - Quan ly team trong Phong ban
+# Cap 4: Staff        - Nhan vien co ban
 
 # Create Super Admin Role
 super_admin_role = Role.find_or_create_by!(name: 'super_admin') do |role|
-  role.description = 'Super Admin - Toàn quyền hệ thống'
+  role.description = 'Quản trị hệ thống - Toàn quyền (Global)'
   role.is_system = true
+  role.is_super_admin = true
 end
+super_admin_role.update(is_super_admin: true, description: 'Quản trị hệ thống - Toàn quyền (Global)') unless super_admin_role.is_super_admin?
 
-# Create Admin Role
-admin_role = Role.find_or_create_by!(name: 'admin') do |role|
-  role.description = 'Admin - Quản lý hệ thống'
+# Create Branch Admin Role (formerly 'admin')
+branch_admin_role = Role.find_or_create_by!(name: 'branch_admin') do |role|
+  role.description = 'Admin Chi nhánh - Quản lý trong phạm vi chi nhánh được chỉ định'
   role.is_system = true
 end
+branch_admin_role.update(description: 'Admin Chi nhánh - Quản lý trong phạm vi chi nhánh được chỉ định', is_system: true)
 
 # Create Staff Role
 staff_role = Role.find_or_create_by!(name: 'staff') do |role|
@@ -18,11 +26,19 @@ staff_role = Role.find_or_create_by!(name: 'staff') do |role|
   role.is_system = true
 end
 
-# Create Department Manager Role
-dept_manager_role = Role.find_or_create_by!(name: 'department_manager') do |role|
-  role.description = 'Trưởng bộ phận - Quản lý bộ phận'
+# Create Department Head Role (formerly 'department_manager')
+dept_head_role = Role.find_or_create_by!(name: 'department_head') do |role|
+  role.description = 'Quản lý khối - Quản lý team trong phạm vi khối/bộ phận'
   role.is_system = true
 end
+dept_head_role.update(description: 'Quản lý khối - Quản lý team trong phạm vi khối/bộ phận', is_system: true)
+
+# Create Position Manager Role (Cap 4: Quan ly Vi tri)
+position_manager_role = Role.find_or_create_by!(name: 'position_manager') do |role|
+  role.description = 'Quản lý vị trí - Quản lý nhân viên trong phạm vi vị trí được chỉ định'
+  role.is_system = true
+end
+position_manager_role.update(description: 'Quản lý vị trí - Quản lý nhân viên trong phạm vi vị trí được chỉ định', is_system: true)
 
 # Define all permissions
 permissions_data = [
@@ -103,23 +119,43 @@ permissions_data.each do |perm_data|
   end
 end
 
-# Assign all permissions to super_admin
+# Cap 1: Super Admin - Toan quyen
 super_admin_role.permissions = Permission.all
 
-# Assign basic permissions to admin
-admin_permissions = Permission.where(resource: ['users', 'work_sessions', 'shift_registrations', 'work_shifts', 'departments', 'branches', 'positions', 'forgot_checkin_requests', 'settings'])
-admin_role.permissions = admin_permissions
+# Cap 2: Branch Admin - Quan ly chi nhanh (khong co roles management, khong tao/xoa chi nhanh)
+branch_admin_permissions = Permission.where(
+  resource: ['users', 'work_sessions', 'shift_registrations', 'work_shifts',
+             'departments', 'positions', 'forgot_checkin_requests', 'settings']
+).or(
+  Permission.where(resource: 'branches', action: ['index', 'show'])
+)
+branch_admin_role.permissions = branch_admin_permissions
 
-# Assign basic permissions to staff
+# Cap 4: Staff - Quyen co ban (chi checkin/checkout va dang ky ca)
 staff_permissions = Permission.where(resource: ['work_sessions', 'shift_registrations']).where(action: ['index', 'show', 'create'])
 staff_role.permissions = staff_permissions
 
-# Assign department management permissions to department_manager
-dept_manager_permissions = Permission.where(resource: ['users', 'work_sessions', 'shift_registrations']).where(
-  resource: 'users', action: ['index', 'show', 'create']
+# Cap 3: Department Head - Quan ly team trong bo phan
+# Xem nhan vien, xem/duyet lich lam viec, duyet don tu
+dept_head_permissions = Permission.where(resource: 'users', action: ['index', 'show']).or(
+  Permission.where(resource: 'work_sessions', action: ['index', 'show'])
 ).or(
-  Permission.where(resource: ['work_sessions', 'shift_registrations'], action: ['index', 'show'])
+  Permission.where(resource: 'shift_registrations', action: ['index', 'show', 'create', 'update', 'approve', 'reject'])
+).or(
+  Permission.where(resource: 'forgot_checkin_requests', action: ['index', 'create', 'approve', 'reject'])
 )
-dept_manager_role.permissions = dept_manager_permissions
+dept_head_role.permissions = dept_head_permissions
 
-puts "✅ Seeded #{Role.count} roles and #{Permission.count} permissions"
+# Cap 4: Position Manager - Quan ly nhan vien trong vi tri duoc chi dinh
+position_manager_permissions = Permission.where(resource: 'users', action: ['index', 'show']).or(
+  Permission.where(resource: 'work_sessions', action: ['index', 'show'])
+).or(
+  Permission.where(resource: 'shift_registrations', action: ['index', 'show', 'create', 'approve', 'reject'])
+).or(
+  Permission.where(resource: 'forgot_checkin_requests', action: ['index', 'create', 'approve', 'reject'])
+)
+position_manager_role.permissions = position_manager_permissions
+
+puts "Roles:"
+Role.all.each { |r| puts "  #{r.id}: #{r.name} (#{r.permissions.count} permissions)" }
+puts "Permissions total: #{Permission.count}"

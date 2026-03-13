@@ -8,12 +8,17 @@ module Api
       # GET /api/v1/roles
       def index
         @roles = Role.all.includes(:permissions, :users)
+        # Security: don't even expose privileged roles to non-super-admin clients
+        unless @current_user&.super_admin?
+          @roles = @roles.where.not(name: ['super_admin', 'admin']).where(is_super_admin: [false, nil])
+        end
         render json: @roles.map { |r|
           {
             id: r.id,
             name: r.name,
             description: r.description,
             is_system: r.is_system,
+            is_super_admin: r.is_super_admin,
             permissions_count: r.permissions.count,
             users_count: r.users.count,
             permissions: r.permissions.map { |p| { id: p.id, name: p.name, resource: p.resource, action: p.action } }
@@ -46,13 +51,22 @@ module Api
       # PATCH /api/v1/roles/:id
       def update
         if @role.is_system
-          return render json: { error: 'Không thể sửa role hệ thống' }, status: :unprocessable_entity
-        end
-        
-        if @role.update(role_params.except(:is_system))
-          render json: @role, status: :ok
+          # System roles: super admin chỉ được sửa description, không được đổi name
+          allowed = role_params.to_h.slice('description')
+          if allowed.blank?
+            return render json: { error: 'Role hệ thống: chỉ có thể sửa mô tả, không thể đổi tên' }, status: :unprocessable_entity
+          end
+          if @role.update(allowed)
+            render json: @role, status: :ok
+          else
+            render json: { errors: @role.errors.full_messages }, status: :unprocessable_entity
+          end
         else
-          render json: { errors: @role.errors.full_messages }, status: :unprocessable_entity
+          if @role.update(role_params.except(:is_system))
+            render json: @role, status: :ok
+          else
+            render json: { errors: @role.errors.full_messages }, status: :unprocessable_entity
+          end
         end
       end
       
@@ -94,9 +108,7 @@ module Api
       end
       
       def check_super_admin
-        unless @current_user&.super_admin?
-          render json: { error: 'Chỉ super admin mới có quyền thực hiện' }, status: :forbidden
-        end
+        require_super_admin!
       end
     end
   end

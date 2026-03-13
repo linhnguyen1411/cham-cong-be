@@ -2,31 +2,42 @@
 module Api
   module V1
     class ShiftRegistrationsController < ApplicationController
+      before_action :authorize_request, except: []
       before_action :set_registration, only: [:show, :update, :destroy, :approve, :reject, :admin_update]
       
       # GET /api/v1/shift_registrations
       def index
+        # Scope theo vai trò: super_admin xem tất cả, branch_admin chỉ nhân sự chi nhánh mình
+        manageable_ids = if @current_user&.super_admin?
+          nil  # super_admin xem tất cả
+        elsif @current_user&.branch_admin? || @current_user&.position_manager? || @current_user&.department_manager?
+          @current_user.manageable_user_ids
+        else
+          [@current_user&.id].compact
+        end
+
         @registrations = ShiftRegistration.all.includes(:user, :work_shift, :approved_by)
-        
-        # Filter by user
+        @registrations = @registrations.where(user_id: manageable_ids) if manageable_ids
+
+        # Filter by user (override nếu có user_id param)
         @registrations = @registrations.for_user(params[:user_id]) if params[:user_id].present?
-        
+
         # Filter by week
         if params[:week_start].present?
           week_start = Date.parse(params[:week_start])
           @registrations = @registrations.for_week(week_start)
         end
-        
+
         # Filter by status
         @registrations = @registrations.where(status: params[:status]) if params[:status].present?
-        
+
         # Filter by date range
         if params[:start_date].present? && params[:end_date].present?
           @registrations = @registrations.where(work_date: params[:start_date]..params[:end_date])
         end
-        
+
         @registrations = @registrations.order(work_date: :asc, created_at: :desc)
-        
+
         render json: @registrations
       end
       
@@ -57,21 +68,104 @@ module Api
         user_id = params[:user_id]
         user = User.find_by(id: user_id)
         
-        # Lấy các ca có thể đăng ký (theo department của user hoặc general)
-        shifts = if user&.department_id.present?
-          WorkShift.where(department_id: [user.department_id, nil])
+        # Lấy các ca có thể đăng ký:
+        # 1. Ca gắn với position của user (ưu tiên cao nhất)
+        # 2. Ca gắn với department của user nhưng không gắn với position cụ thể
+        # 3. Ca general (không gắn với department hoặc position)
+        shifts = WorkShift.all
+        
+        if user&.position_id.present?
+          # User có position: lấy ca của position HOẶC ca của department (không có position) HOẶC ca general
+          shifts = WorkShift.where(
+            "(position_id = ? OR (position_id IS NULL AND (department_id = ? OR department_id IS NULL)))",
+            user.position_id,
+            user.department_id || -1
+          )
+        elsif user&.department_id.present?
+          # Nếu không có position, lấy ca của department (không có position) hoặc general
+          shifts = WorkShift.where(
+            "(department_id = ? OR department_id IS NULL) AND position_id IS NULL",
+            user.department_id
+          )
         else
-          WorkShift.where(department_id: nil)
+          # Nếu không có department, chỉ lấy ca general
+          shifts = WorkShift.where(department_id: nil, position_id: nil)
         end
         
-        render json: shifts
+        render json: shifts.map { |s|
+          s.as_json.merge(
+            department_name: s.department&.name,
+            position_name: s.position&.name
+          )
+        }
       end
       
       # GET /api/v1/shift_registrations/pending
       def pending
-        @registrations = ShiftRegistration.pending_approval
-          .includes(:user, :work_shift)
-          .order(work_date: :asc)
+        if @current_user&.is_admin?
+          # Admin xem tất cả pending
+          @registrations = ShiftRegistration.pending_approval
+            .includes(:user, :work_shift)
+            .order(work_date: :asc)
+        elsif @current_user&.position_manager? || @current_user&.department_manager?
+          # Position/Department manager chỉ xem pending của nhân viên trong phạm vi quản lý
+          manageable_ids = @current_user.manageable_user_ids
+          @registrations = ShiftRegistration.pending_approval
+            .where(user_id: manageable_ids)
+            .includes(:user, :work_shift)
+            .order(work_date: :asc)
+        else
+          # Staff chỉ xem của mình
+          @registrations = ShiftRegistration.pending_approval
+            .where(user_id: @current_user.id)
+            .includes(:user, :work_shift)
+            .order(work_date: :asc)
+        end
+        
+        render json: @registrations
+      end
+      
+      # GET /api/v1/shift_registrations/my_team
+      # Position/Department manager xem đăng ký ca của nhân viên trong team
+      def my_team
+        # Debug: Log user info
+        Rails.logger.info "=== my_team (ShiftRegistrations) Debug ==="
+        Rails.logger.info "Current user: #{@current_user&.id} - #{@current_user&.username}"
+        Rails.logger.info "Is admin: #{@current_user&.is_admin?}"
+        Rails.logger.info "Position manager: #{@current_user&.position_manager?}"
+        Rails.logger.info "Department manager: #{@current_user&.department_manager?}"
+        Rails.logger.info "Managed positions: #{@current_user&.managed_positions&.count || 0}"
+        Rails.logger.info "Managed departments: #{@current_user&.managed_departments&.count || 0}"
+        
+        # Nếu là admin, xem tất cả
+        if @current_user&.is_admin?
+          manageable_ids = User.pluck(:id)
+        elsif @current_user&.position_manager? || @current_user&.department_manager?
+          # Position/Department manager chỉ xem nhân viên trong phạm vi quản lý
+          manageable_ids = @current_user.manageable_user_ids
+        else
+          # Staff chỉ xem của mình
+          manageable_ids = [@current_user.id].compact
+        end
+        
+        # Filter by week if provided
+        if params[:week_start].present?
+          week_start = Date.parse(params[:week_start])
+          @registrations = ShiftRegistration.where(user_id: manageable_ids)
+            .for_week(week_start)
+            .includes(:user, :work_shift, :approved_by)
+            .order(work_date: :asc, created_at: :desc)
+        else
+          # Default: current week and next week
+          today = Date.current
+          current_week_start = today.beginning_of_week(:monday)
+          next_week_start = today.next_week(:monday)
+          
+          @registrations = ShiftRegistration.where(user_id: manageable_ids)
+            .where(week_start: [current_week_start, next_week_start])
+            .includes(:user, :work_shift, :approved_by)
+            .order(work_date: :asc, created_at: :desc)
+        end
         
         render json: @registrations
       end
@@ -83,8 +177,17 @@ module Api
       
       # POST /api/v1/shift_registrations
       def create
+        # Ownership: chỉ được tạo cho chính mình, trừ khi admin/manager
+        target_user_id = registration_params[:user_id]
+        if target_user_id.present? && target_user_id.to_s != @current_user.id.to_s
+          target_user = User.find_by(id: target_user_id)
+          unless @current_user&.is_admin? || @current_user&.can_manage_user?(target_user)
+            return render_forbidden('Bạn không có quyền tạo đăng ký ca cho người khác')
+          end
+        end
+
         @registration = ShiftRegistration.new(registration_params)
-        
+
         if @registration.save
           render json: @registration, status: :created
         else
@@ -97,9 +200,14 @@ module Api
         user_id = params[:user_id]
         registrations_data = params[:registrations] || []
         user = User.find_by(id: user_id)
-        
+
         return render json: { error: 'User not found' }, status: :not_found unless user
-        
+
+        # Ownership: chỉ được bulk_create cho chính mình, trừ khi admin/manager
+        unless user_id.to_s == @current_user.id.to_s || @current_user&.is_admin? || @current_user&.can_manage_user?(user)
+          return render_forbidden('Bạn không có quyền đăng ký ca cho người khác')
+        end
+
         # Kiểm tra thời gian đăng ký: chỉ cho phép vào thứ 6 và thứ 7
         unless can_register_next_week?
           today = Date.current
@@ -132,23 +240,41 @@ module Api
           week_start = first_reg_date.beginning_of_week(:monday)
           
           # Xóa TẤT CẢ pending trong tuần này (cho phép đổi đăng ký)
-          ShiftRegistration.where(
+          pending_to_remove = ShiftRegistration.where(
             user_id: user_id,
             week_start: week_start,
             status: :pending
-          ).delete_all
+          ).to_a
+
+          pending_to_remove.each do |reg|
+            reg.audit_soft_delete!(
+              actor: @current_user,
+              source: 'bulk_create_cleanup',
+              reason: 'Auto remove pending registrations before bulk create',
+              metadata: { week_start: week_start.to_s }
+            )
+          end
           
           # Xóa các đăng ký approved/rejected cho các ngày/ca đang được đăng ký lại (nếu có)
           registrations_data.each do |reg_data|
             work_date = reg_data[:work_date].is_a?(String) ? Date.parse(reg_data[:work_date]) : reg_data[:work_date]
             
             # Xóa approved/rejected cho cùng user, date, shift (pending đã xóa ở trên)
-            ShiftRegistration.where(
+            dup_to_remove = ShiftRegistration.where(
               user_id: user_id,
               work_date: work_date,
               work_shift_id: reg_data[:work_shift_id],
               status: [:approved, :rejected]
-            ).delete_all
+            ).to_a
+
+            dup_to_remove.each do |reg|
+              reg.audit_soft_delete!(
+                actor: @current_user,
+                source: 'bulk_create_cleanup',
+                reason: 'Auto remove approved/rejected registration before re-registering',
+                metadata: { work_date: work_date.to_s, work_shift_id: reg_data[:work_shift_id] }
+              )
+            end
           end
           
           # Tạo tất cả đăng ký mới - collect tất cả lỗi trước
@@ -216,10 +342,12 @@ module Api
       # PATCH /api/v1/shift_registrations/:id
       def update
         # Cho phép user sửa đăng ký pending của chính họ
-        # Hoặc admin có thể sửa bất kỳ đăng ký nào
-        if @registration.pending? || current_user&.admin?
-          # Admin có thể sửa cả status, user khác chỉ sửa được thông tin đăng ký
-          update_params = current_user&.admin? ? registration_params : registration_params.except(:status, :user_id)
+        # Hoặc admin/department manager có thể sửa đăng ký của nhân viên (position manager không có quyền sửa)
+        can_manage = is_admin? || @current_user&.can_manage_user?(@registration.user)
+        
+        if @registration.pending? || can_manage
+          # Admin/Department Manager có thể sửa cả status, user khác chỉ sửa được thông tin đăng ký
+          update_params = can_manage ? registration_params : registration_params.except(:status, :user_id)
           
           if @registration.update(update_params)
             render json: @registration
@@ -234,9 +362,15 @@ module Api
       # DELETE /api/v1/shift_registrations/:id
       def destroy
         # Cho phép user xóa đăng ký pending của chính họ
-        # Hoặc admin có thể xóa bất kỳ đăng ký nào
-        if @registration.pending? || current_user&.admin?
-          @registration.destroy
+        # Hoặc admin/department manager có thể xóa đăng ký của nhân viên (position manager không có quyền xóa)
+        can_manage = is_admin? || @current_user&.can_manage_user?(@registration.user)
+        
+        if @registration.pending? || can_manage
+          @registration.audit_soft_delete_for_off!(
+            actor: @current_user,
+            source: 'destroy',
+            reason: params[:reason]
+          )
           head :no_content
         else
           render json: { error: 'Không thể xóa đăng ký đã được duyệt/từ chối' }, status: :unprocessable_entity
@@ -244,10 +378,12 @@ module Api
       end
       
       # POST /api/v1/shift_registrations/:id/admin_update
-      # Admin có thể sửa đăng ký của nhân viên (kể cả đã approved)
+      # Admin/Department Manager có thể sửa đăng ký của nhân viên (kể cả đã approved)
+      # Position Manager KHÔNG có quyền sửa (chỉ có quyền duyệt)
       def admin_update
-        unless current_user&.admin?
-          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
+        # Kiểm tra quyền: Admin hoặc department manager (có quyền quản lý)
+        unless @current_user&.is_admin? || @current_user&.can_manage_user?(@registration.user)
+          return render json: { error: 'Bạn không có quyền sửa đăng ký này' }, status: :forbidden
         end
         
         if @registration.update(admin_registration_params)
@@ -258,12 +394,9 @@ module Api
       end
       
       # POST /api/v1/shift_registrations/admin_quick_add
-      # Admin có thể thêm nhân viên vào ca nhanh (bỏ qua validate)
+      # Admin/Department Manager có thể thêm nhân viên vào ca nhanh (bỏ qua validate)
+      # Position Manager KHÔNG có quyền thêm (chỉ có quyền duyệt)
       def admin_quick_add
-        unless current_user&.admin?
-          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
-        end
-        
         user_id = params[:user_id]
         work_shift_id = params[:work_shift_id]
         work_date = params[:work_date]
@@ -272,16 +405,30 @@ module Api
           return render json: { error: 'Thiếu tham số' }, status: :bad_request
         end
         
+        target_user = User.find_by(id: user_id)
+        # Kiểm tra quyền: Admin hoặc department manager (có quyền quản lý)
+        unless @current_user&.is_admin? || (target_user && @current_user&.can_manage_user?(target_user))
+          return render json: { error: 'Bạn không có quyền thêm đăng ký ca này' }, status: :forbidden
+        end
+        
         # Parse date
         work_date_parsed = work_date.is_a?(String) ? Date.parse(work_date) : work_date
         week_start = work_date_parsed.beginning_of_week(:monday)
         
         # Xóa đăng ký cũ nếu có (cho cùng user, date, shift)
-        ShiftRegistration.where(
+        existing = ShiftRegistration.where(
           user_id: user_id,
           work_date: work_date_parsed,
           work_shift_id: work_shift_id
-        ).destroy_all
+        ).to_a
+
+        existing.each do |reg|
+          reg.audit_soft_delete!(
+            actor: @current_user,
+            source: 'admin_quick_add_replace',
+            reason: params[:reason]
+          )
+        end
         
         # Tạo đăng ký mới với status approved (bỏ qua validate bằng cách dùng update_column hoặc save(validate: false))
         registration = ShiftRegistration.new(
@@ -290,7 +437,7 @@ module Api
           work_date: work_date_parsed,
           week_start: week_start,
           status: :approved,
-          approved_by: current_user,
+          approved_by: @current_user,
           approved_at: Time.current,
           note: 'Admin thêm nhanh'
         )
@@ -306,10 +453,15 @@ module Api
       end
       
       # POST /api/v1/shift_registrations/admin_quick_delete
-      # Admin có thể xóa nhân viên ra khỏi ca nhanh
+      # Admin/Department Manager có thể xóa nhân viên ra khỏi ca nhanh
+      # Position Manager KHÔNG có quyền xóa (chỉ có quyền duyệt)
       def admin_quick_delete
-        unless current_user&.admin?
-          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
+        user_id = params[:user_id]
+        target_user = User.find_by(id: user_id)
+        
+        # Kiểm tra quyền: Admin hoặc department manager (có quyền quản lý)
+        unless @current_user&.is_admin? || (target_user && @current_user&.can_manage_user?(target_user))
+          return render json: { error: 'Bạn không có quyền xóa đăng ký ca này' }, status: :forbidden
         end
         
         user_id = params[:user_id]
@@ -324,22 +476,29 @@ module Api
         work_date_parsed = work_date.is_a?(String) ? Date.parse(work_date) : work_date
         
         # Xóa đăng ký
-        deleted_count = ShiftRegistration.where(
+        to_remove = ShiftRegistration.where(
           user_id: user_id,
           work_date: work_date_parsed,
           work_shift_id: work_shift_id
-        ).destroy_all.count
+        ).to_a
+
+        to_remove.each do |reg|
+          reg.audit_soft_delete_for_off!(
+            actor: @current_user,
+            source: 'admin_quick_delete',
+            reason: params[:reason]
+          )
+        end
+
+        deleted_count = to_remove.length
         
         render json: { message: 'Đã xóa', deleted_count: deleted_count }, status: :ok
       end
       
       # POST /api/v1/shift_registrations/admin_bulk_update
-      # Admin có thể sửa nhiều đăng ký cùng lúc
+      # Admin/Department Manager có thể sửa nhiều đăng ký cùng lúc
+      # Position Manager KHÔNG có quyền sửa (chỉ có quyền duyệt)
       def admin_bulk_update
-        unless current_user&.admin?
-          return render json: { error: 'Chỉ admin mới có quyền thực hiện' }, status: :forbidden
-        end
-        
         updates = params[:updates] || []
         results = { updated: [], errors: [] }
         
@@ -347,6 +506,12 @@ module Api
           registration = ShiftRegistration.find_by(id: update_data[:id])
           unless registration
             results[:errors] << { id: update_data[:id], error: 'Không tìm thấy đăng ký' }
+            next
+          end
+          
+          # Kiểm tra quyền cho từng đăng ký (chỉ admin và department manager có quyền sửa)
+          unless @current_user&.is_admin? || @current_user&.can_manage_user?(registration.user)
+            results[:errors] << { id: registration.id, error: 'Không có quyền sửa đăng ký này' }
             next
           end
           
@@ -367,10 +532,15 @@ module Api
       
       # POST /api/v1/shift_registrations/:id/approve
       def approve
-        admin_user = User.find_by(id: params[:admin_id])
+        return unless require_permission!('shift_registrations', 'approve')
+
+        # Scope: admin sees all; others only within managed scope
+        unless @current_user&.is_admin? || @current_user&.can_view_user?(@registration.user)
+          return render_forbidden('Bạn không có quyền duyệt đăng ký này')
+        end
         
         begin
-          @registration.approve!(admin_user, params[:note])
+          @registration.approve!(@current_user, params[:note])
           render json: @registration
         rescue => e
           render json: { error: e.message }, status: :unprocessable_entity
@@ -380,11 +550,20 @@ module Api
       # POST /api/v1/shift_registrations/:id/reject
       # Khi admin từ chối -> xóa luôn đăng ký (không giữ lại lịch sử)
       def reject
-        admin_user = User.find_by(id: params[:admin_id])
+        return unless require_permission!('shift_registrations', 'reject')
+
+        # Scope: admin sees all; others only within managed scope
+        unless @current_user&.is_admin? || @current_user&.can_view_user?(@registration.user)
+          return render_forbidden('Bạn không có quyền từ chối đăng ký này')
+        end
         
         begin
           registration_id = @registration.id
-          @registration.destroy
+          @registration.audit_soft_delete_for_off!(
+            actor: @current_user,
+            source: 'reject_and_delete',
+            reason: params[:reason] || 'Rejected and removed'
+          )
           render json: { 
             message: 'Đã từ chối và xóa đăng ký',
             id: registration_id
@@ -393,18 +572,61 @@ module Api
           render json: { error: e.message }, status: :unprocessable_entity
         end
       end
+
+      # GET /api/v1/shift_registrations/deletion_history?week_start=YYYY-MM-DD
+      def deletion_history
+        week_start = params[:week_start].present? ? Date.parse(params[:week_start]) : Date.current.beginning_of_week(:monday)
+
+        # Scope by permission
+        if @current_user&.is_admin?
+          manageable_ids = nil
+        elsif @current_user&.position_manager? || @current_user&.department_manager?
+          manageable_ids = @current_user.manageable_user_ids
+        else
+          manageable_ids = [@current_user.id].compact
+        end
+
+        audits = ShiftRegistrationAudit.where(action: 'deleted', week_start: week_start)
+        audits = audits.where(target_user_id: manageable_ids) if manageable_ids
+        audits = audits.order(created_at: :desc).includes(:actor, :target_user, :work_shift)
+
+        render json: audits.map { |a|
+          {
+            id: a.id,
+            action: a.action,
+            created_at: a.created_at,
+            week_start: a.week_start,
+            work_date: a.work_date,
+            source: a.source,
+            reason: a.reason,
+            actor_id: a.actor_id,
+            actor_name: a.actor&.full_name,
+            target_user_id: a.target_user_id,
+            target_user_name: a.target_user&.full_name,
+            work_shift_id: a.work_shift_id,
+            work_shift_name: a.work_shift&.name,
+            previous_status: a.previous_status,
+            metadata: a.metadata
+          }
+        }
+      end
       
       # POST /api/v1/shift_registrations/bulk_approve
       def bulk_approve
         ids = params[:ids] || []
-        admin_user = User.find_by(id: params[:admin_id])
         
         approved = []
         errors = []
         
         ShiftRegistration.where(id: ids, status: :pending).find_each do |reg|
+          unless @current_user&.has_permission?('shift_registrations', 'approve') &&
+                 (@current_user&.is_admin? || @current_user&.can_view_user?(reg.user))
+            errors << { id: reg.id, error: 'Không có quyền duyệt đăng ký này' }
+            next
+          end
+          
           begin
-            reg.approve!(admin_user, params[:note])
+            reg.approve!(@current_user, params[:note])
             approved << reg.id
           rescue => e
             errors << { id: reg.id, error: e.message }
@@ -483,15 +705,16 @@ module Api
             end
           end.flatten.compact
           
-          # Get existing APPROVED registrations for this week (không lấy pending vì sẽ bị xóa)
-          # Pending sẽ bị xóa trước khi tạo mới, nên không cần validate với pending cũ
-          existing_approved_regs = ShiftRegistration
-            .where(user_id: user.id, week_start: week_start, status: :approved)
+        # Get existing registrations for this week.
+        # IMPORTANT: include both approved + pending so "off"/capacity validation can't be bypassed
+        # just because the other user's registrations are still pending.
+        existing_regs = ShiftRegistration
+          .where(user_id: user.id, week_start: week_start, status: [:approved, :pending])
             .pluck(:work_date, :work_shift_id)
             .map { |date, shift_id| { work_date: date, work_shift_id: shift_id } }
           
-          # Combine existing APPROVED and new registrations (pending sẽ bị xóa)
-          all_regs = (existing_approved_regs + week_regs).uniq { |r| [r[:work_date], r[:work_shift_id]] }
+          # Combine existing (approved/pending) and new registrations
+          all_regs = (existing_regs + week_regs).uniq { |r| [r[:work_date], r[:work_shift_id]] }
           
           # Chỉ đếm các ca bắt buộc (không tính tăng ca)
           # Tăng ca: morning_only đăng ký afternoon hoặc afternoon_only đăng ký morning
@@ -604,9 +827,9 @@ module Api
                 total_same_position = same_position_users.size
                 
                 # - Đếm số người CÙNG VỊ TRÍ, BẮT BUỘC làm ca sáng ĐÃ ĐĂNG KÝ ca sáng (không tính user hiện tại)
-                # CHỈ ĐẾM APPROVED (pending sẽ bị xóa khi submit)
+                # Count both APPROVED + PENDING for other users to prevent "pending bypass"
                 registered_morning_user_ids = ShiftRegistration
-                  .where(work_date: date, work_shift_id: morning_shift_id, status: :approved)
+                  .where(work_date: date, work_shift_id: morning_shift_id, status: [:approved, :pending])
                   .where.not(user_id: user.id)
                   .where(user_id: same_position_users)  # Chỉ check những người cùng position
                   .pluck(:user_id)
@@ -615,9 +838,9 @@ module Api
                 required_registered_count = registered_morning_user_ids.size
                 
                 # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
-                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (CHỈ APPROVED, pending sẽ bị xóa)
+                # Include APPROVED + PENDING so pending registrations still count as "has schedule"
                 users_with_registrations = ShiftRegistration
-                  .where(week_start: week_start, status: :approved)
+                  .where(week_start: week_start, status: [:approved, :pending])
                   .where(user_id: same_position_users)
                   .where.not(user_id: user.id)
                   .distinct
@@ -675,9 +898,9 @@ module Api
                 same_position_users = same_position_users_query.pluck(:id)
                 
                 # - Đếm số người CÙNG VỊ TRÍ, BẮT BUỘC làm ca chiều ĐÃ ĐĂNG KÝ ca chiều (không tính user hiện tại)
-                # CHỈ ĐẾM APPROVED (pending sẽ bị xóa khi submit)
+                # Count both APPROVED + PENDING for other users to prevent "pending bypass"
                 registered_afternoon_user_ids = ShiftRegistration
-                  .where(work_date: date, work_shift_id: afternoon_shift_id, status: :approved)
+                  .where(work_date: date, work_shift_id: afternoon_shift_id, status: [:approved, :pending])
                   .where.not(user_id: user.id)
                   .where(user_id: same_position_users)  # Chỉ check những người cùng position
                   .pluck(:user_id)
@@ -685,9 +908,9 @@ module Api
                 required_registered_count = registered_afternoon_user_ids.size
                 
                 # QUAN TRỌNG: Chỉ tính là "off" khi user đã có ít nhất 1 đăng ký trong tuần
-                # Tìm những người CÙNG VỊ TRÍ đã có ít nhất 1 đăng ký trong tuần này (CHỈ APPROVED, pending sẽ bị xóa)
+                # Include APPROVED + PENDING so pending registrations still count as "has schedule"
                 users_with_registrations = ShiftRegistration
-                  .where(week_start: week_start, status: :approved)
+                  .where(week_start: week_start, status: [:approved, :pending])
                   .where(user_id: same_position_users)
                   .where.not(user_id: user.id)
                   .distinct

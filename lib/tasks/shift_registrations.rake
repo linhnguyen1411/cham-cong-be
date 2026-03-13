@@ -127,7 +127,10 @@ namespace :shift_registrations do
     Rails.logger.info shift_info
     
     # Lấy tất cả nhân viên active (không phải admin)
-    staff_users = User.where(role: :staff, status: :active)
+    # NOTE: User model có cả `belongs_to :role` (role_id) và legacy enum `role` với `_prefix: :legacy`,
+    # nên query `where(role: :staff)` có thể bị hiểu sai (association) và trả về rỗng.
+    # Dùng scope `User.staff` để hỗ trợ cả role table và legacy enum.
+    staff_users = User.staff.active_users
     total_staff = staff_users.count
     staff_info = "\n👥 Tổng số nhân viên: #{total_staff}"
     puts staff_info
@@ -143,21 +146,16 @@ namespace :shift_registrations do
     
     staff_users.find_each do |user|
       begin
-        # Kiểm tra xem đã có đăng ký nào cho tuần này chưa (approved hoặc pending)
-        existing_regs = ShiftRegistration.where(
-          user_id: user.id,
-          week_start: week_start,
-          status: [:approved, :pending]
-        )
-        
-        if existing_regs.any?
+        # Nếu nhân viên đã tự đăng ký ca (pending) cho tuần này → tôn trọng lịch của họ, không tạo thêm
+        has_pending = ShiftRegistration.where(user_id: user.id, week_start: week_start, status: :pending).exists?
+        if has_pending
           skipped_count += 1
-          skip_msg = "⏭️  #{user.full_name} (ID: #{user.id}): Đã có đăng ký (#{existing_regs.count} ca), bỏ qua"
+          skip_msg = "⏭️  #{user.full_name} (ID: #{user.id}): Đã có đăng ký chờ duyệt, bỏ qua tạo tự động"
           puts skip_msg
           Rails.logger.info skip_msg
           next
         end
-        
+
         # Xác định các ca cần đăng ký dựa trên work_schedule_type
         shifts_to_register = []
         
@@ -186,22 +184,50 @@ namespace :shift_registrations do
           end
         end
         
-        # Tạo đăng ký với status approved (tự động duyệt)
+        # IMPORTANT:
+        # - Không "skip" toàn bộ user chỉ vì đã có vài ca (data có thể bị partial do job lỗi/unique conflict)
+        # - Thay vào đó: TOP-UP những ca bị thiếu, và RESTORE nếu record đã bị soft-delete
+        #
+        # Tạo/restore đăng ký với status approved (tự động duyệt)
         registrations_created = []
         shifts_to_register.each do |item|
-          registration = ShiftRegistration.create!(
+          existing = ShiftRegistration.with_deleted.find_by(
             user_id: user.id,
             work_shift_id: item[:shift].id,
-            work_date: item[:date],
-            week_start: week_start,
-            status: :approved,
-            note: 'Tự động tạo mặc định'
+            work_date: item[:date]
           )
-          registrations_created << registration
+
+          if existing.nil?
+            registration = ShiftRegistration.create!(
+              user_id: user.id,
+              work_shift_id: item[:shift].id,
+              work_date: item[:date],
+              week_start: week_start,
+              status: :approved,
+              note: 'Tự động tạo mặc định'
+            )
+            registrations_created << registration
+          elsif existing.deleted?
+            existing.update_columns(
+              deleted_at: nil,
+              week_start: week_start,
+              status: ShiftRegistration.statuses[:approved],
+              note: existing.note.presence || 'Tự động restore mặc định',
+              updated_at: Time.current
+            )
+            registrations_created << existing
+          else
+            # Already exists (active). Do nothing.
+          end
         end
         
         created_count += registrations_created.count
-        success_msg = "✅ #{user.full_name} (ID: #{user.id}): Đã tạo #{registrations_created.count} ca (#{user.work_schedule_type})"
+        if registrations_created.any?
+          success_msg = "✅ #{user.full_name} (ID: #{user.id}): Đã tạo/restore #{registrations_created.count} ca (#{user.work_schedule_type})"
+        else
+          skipped_count += 1
+          success_msg = "⏭️  #{user.full_name} (ID: #{user.id}): Không có ca thiếu, bỏ qua"
+        end
         puts success_msg
         Rails.logger.info success_msg
         

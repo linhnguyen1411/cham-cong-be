@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
+ActiveRecord::Schema[7.1].define(version: 2026_03_13_080954) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -53,6 +53,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.integer "max_shift_off_count_per_day", default: 1, null: false
   end
 
+  create_table "branch_managers", force: :cascade do |t|
+    t.bigint "branch_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["branch_id", "user_id"], name: "index_branch_managers_on_branch_id_and_user_id", unique: true
+    t.index ["branch_id"], name: "index_branch_managers_on_branch_id"
+    t.index ["user_id"], name: "index_branch_managers_on_user_id"
+  end
+
   create_table "branches", force: :cascade do |t|
     t.string "name"
     t.string "address"
@@ -60,7 +70,19 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "deleted_at"
+    t.bigint "manager_id"
     t.index ["deleted_at"], name: "index_branches_on_deleted_at"
+    t.index ["manager_id"], name: "index_branches_on_manager_id"
+  end
+
+  create_table "department_managers", force: :cascade do |t|
+    t.bigint "department_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["department_id", "user_id"], name: "index_department_managers_on_department_id_and_user_id", unique: true
+    t.index ["department_id"], name: "index_department_managers_on_department_id"
+    t.index ["user_id"], name: "index_department_managers_on_user_id"
   end
 
   create_table "departments", force: :cascade do |t|
@@ -70,7 +92,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.datetime "updated_at", null: false
     t.string "ip_address"
     t.datetime "deleted_at"
+    t.bigint "manager_id"
+    t.bigint "branch_id"
+    t.jsonb "work_days", default: [1, 2, 3, 4, 5]
     t.index ["deleted_at"], name: "index_departments_on_deleted_at"
+    t.index ["manager_id"], name: "index_departments_on_manager_id"
   end
 
   create_table "forgot_checkin_requests", force: :cascade do |t|
@@ -106,6 +132,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.index ["resource", "action"], name: "index_permissions_on_resource_and_action", unique: true
   end
 
+  create_table "position_managers", force: :cascade do |t|
+    t.bigint "position_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["position_id", "user_id"], name: "index_position_managers_on_position_id_and_user_id", unique: true
+    t.index ["position_id"], name: "index_position_managers_on_position_id"
+    t.index ["user_id"], name: "index_position_managers_on_user_id"
+  end
+
   create_table "positions", force: :cascade do |t|
     t.string "name", null: false
     t.text "description"
@@ -115,9 +151,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "deleted_at"
+    t.bigint "manager_id"
     t.index ["branch_id"], name: "index_positions_on_branch_id"
     t.index ["deleted_at"], name: "index_positions_on_deleted_at"
     t.index ["department_id"], name: "index_positions_on_department_id"
+    t.index ["manager_id"], name: "index_positions_on_manager_id"
     t.index ["name", "branch_id", "department_id"], name: "idx_positions_unique", unique: true
   end
 
@@ -138,8 +176,31 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.datetime "deleted_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "is_super_admin", default: false, null: false
     t.index ["deleted_at"], name: "index_roles_on_deleted_at"
     t.index ["name"], name: "index_roles_on_name", unique: true
+  end
+
+  create_table "shift_registration_audits", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_id"
+    t.bigint "target_user_id"
+    t.bigint "shift_registration_id"
+    t.bigint "work_shift_id"
+    t.date "work_date"
+    t.date "week_start"
+    t.string "previous_status"
+    t.string "source"
+    t.text "reason"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_shift_registration_audits_on_actor_id"
+    t.index ["shift_registration_id"], name: "index_shift_registration_audits_on_shift_registration_id"
+    t.index ["target_user_id"], name: "index_shift_registration_audits_on_target_user_id"
+    t.index ["week_start"], name: "index_shift_registration_audits_on_week_start"
+    t.index ["work_date"], name: "index_shift_registration_audits_on_work_date"
+    t.index ["work_shift_id"], name: "index_shift_registration_audits_on_work_shift_id"
   end
 
   create_table "shift_registrations", force: :cascade do |t|
@@ -158,7 +219,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.index ["approved_by_id"], name: "index_shift_registrations_on_approved_by_id"
     t.index ["deleted_at"], name: "index_shift_registrations_on_deleted_at"
     t.index ["status"], name: "index_shift_registrations_on_status"
-    t.index ["user_id", "work_date", "work_shift_id"], name: "idx_shift_reg_user_date_shift", unique: true
+    t.index ["user_id", "work_date", "work_shift_id"], name: "idx_shift_reg_user_date_shift", unique: true, where: "(deleted_at IS NULL)"
     t.index ["user_id"], name: "index_shift_registrations_on_user_id"
     t.index ["week_start"], name: "index_shift_registrations_on_week_start"
     t.index ["work_shift_id"], name: "index_shift_registrations_on_work_shift_id"
@@ -189,7 +250,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.index ["position_id"], name: "index_users_on_position_id"
     t.index ["role_id"], name: "index_users_on_role_id"
     t.index ["status"], name: "index_users_on_status"
-    t.index ["username"], name: "index_users_on_username", unique: true
+    t.index ["username"], name: "index_users_on_username_unique_not_deleted", unique: true, where: "(deleted_at IS NULL)"
   end
 
   create_table "work_sessions", force: :cascade do |t|
@@ -233,19 +294,34 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
     t.datetime "updated_at", null: false
     t.bigint "department_id"
     t.datetime "deleted_at"
+    t.bigint "position_id"
     t.index ["deleted_at"], name: "index_work_shifts_on_deleted_at"
     t.index ["department_id"], name: "index_work_shifts_on_department_id"
     t.index ["name"], name: "index_work_shifts_on_name", unique: true
+    t.index ["position_id"], name: "index_work_shifts_on_position_id"
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "branch_managers", "branches"
+  add_foreign_key "branch_managers", "users"
+  add_foreign_key "branches", "users", column: "manager_id"
+  add_foreign_key "department_managers", "departments"
+  add_foreign_key "department_managers", "users"
+  add_foreign_key "departments", "users", column: "manager_id"
   add_foreign_key "forgot_checkin_requests", "users"
   add_foreign_key "forgot_checkin_requests", "users", column: "approved_by_id"
+  add_foreign_key "position_managers", "positions"
+  add_foreign_key "position_managers", "users"
   add_foreign_key "positions", "branches"
   add_foreign_key "positions", "departments"
+  add_foreign_key "positions", "users", column: "manager_id"
   add_foreign_key "role_permissions", "permissions"
   add_foreign_key "role_permissions", "roles"
+  add_foreign_key "shift_registration_audits", "shift_registrations"
+  add_foreign_key "shift_registration_audits", "users", column: "actor_id"
+  add_foreign_key "shift_registration_audits", "users", column: "target_user_id"
+  add_foreign_key "shift_registration_audits", "work_shifts"
   add_foreign_key "shift_registrations", "users"
   add_foreign_key "shift_registrations", "users", column: "approved_by_id"
   add_foreign_key "shift_registrations", "work_shifts"
@@ -257,4 +333,5 @@ ActiveRecord::Schema[7.1].define(version: 2026_01_09_085811) do
   add_foreign_key "work_sessions", "users"
   add_foreign_key "work_sessions", "work_shifts"
   add_foreign_key "work_shifts", "departments"
+  add_foreign_key "work_shifts", "positions"
 end

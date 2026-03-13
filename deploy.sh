@@ -70,10 +70,10 @@ log_info "Installing backend gems (this may take a minute)..."
 ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && bundle install --without development test --quiet" 2>/dev/null
 log_success "Backend dependencies installed"
 
-# 6️⃣ Run migrations
-log_info "Running database migrations..."
-ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && source .env 2>/dev/null || true && RAILS_ENV=production bundle exec rails db:migrate" 2>/dev/null
-log_success "Database migrations completed"
+# 6️⃣ Run migrations + sync (roles, permissions, role_id mapping)
+log_info "Running database migrations + deploy sync..."
+ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && source .env 2>/dev/null || true && RAILS_ENV=production bundle exec rake deploy:sync" 2>/dev/null
+log_success "Database migrations + sync completed"
 
 # 7️⃣ Install frontend dependencies
 log_info "Installing frontend dependencies (this may take a minute)..."

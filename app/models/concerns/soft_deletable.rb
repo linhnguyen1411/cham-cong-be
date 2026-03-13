@@ -14,6 +14,17 @@ module SoftDeletable
   end
 
   def restore!
+    # Check if there's already an active record with the same unique attributes (if applicable)
+    # For User model, check username uniqueness before restore
+    if respond_to?(:username)
+      existing = self.class.where(username: username).where.not(id: id).first
+      if existing
+        raise ActiveRecord::RecordInvalid.new(self).tap do |e|
+          e.record.errors.add(:base, "Cannot restore: username '#{username}' is already taken by user ID #{existing.id}")
+        end
+      end
+    end
+    
     update_column(:deleted_at, nil)
   end
 
