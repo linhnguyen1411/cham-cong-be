@@ -146,11 +146,13 @@ namespace :shift_registrations do
     
     staff_users.find_each do |user|
       begin
-        # Nếu nhân viên đã tự đăng ký ca (pending) cho tuần này → tôn trọng lịch của họ, không tạo thêm
-        has_pending = ShiftRegistration.where(user_id: user.id, week_start: week_start, status: :pending).exists?
-        if has_pending
+        # Nếu nhân viên đã tự đăng ký ca cho tuần này (dù pending hay approved) → tôn trọng lịch của họ, không tạo thêm
+        # Fix: trước đây chỉ check pending, dẫn đến việc tạo tự động vào ngày nhân viên cố ý bỏ trống (nghỉ)
+        # sau khi đăng ký đã được duyệt (approved) trước khi cron chạy
+        has_registered = ShiftRegistration.where(user_id: user.id, week_start: week_start).exists?
+        if has_registered
           skipped_count += 1
-          skip_msg = "⏭️  #{user.full_name} (ID: #{user.id}): Đã có đăng ký chờ duyệt, bỏ qua tạo tự động"
+          skip_msg = "⏭️  #{user.full_name} (ID: #{user.id}): Đã có đăng ký trong tuần, bỏ qua tạo tự động"
           puts skip_msg
           Rails.logger.info skip_msg
           next
